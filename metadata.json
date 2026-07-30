@@ -1,0 +1,6 @@
+{
+  "name": "Swagatam Gujarati Farshan & Hing Store",
+  "description": "Authentic Gujarati Farshan, Handcrafted Khakhra & Pure Hing online store with custom weight/packet selection, customer reviews, order tracking, bulk inquiry, and admin management panel.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

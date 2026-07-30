@@ -1,0 +1,612 @@
+import express from 'express';
+import path from 'path';
+import fs from 'fs';
+import { createServer as createViteServer } from 'vite';
+import { INITIAL_PRODUCTS, INITIAL_REVIEWS } from './src/data/initialData.js';
+import { Product, Order, Review, BulkInquiry } from './src/types.js';
+import { getSupabase, SUPABASE_SQL_SCHEMA } from './src/lib/supabase.js';
+
+const app = express();
+const PORT = 3000;
+
+app.use(express.json());
+
+// In-memory data store with file persistence and Supabase synchronization
+const STORE_FILE = path.join(process.cwd(), 'data_store.json');
+
+interface StoreData {
+  products: Product[];
+  orders: Order[];
+  reviews: Review[];
+  bulkInquiries: BulkInquiry[];
+}
+
+let store: StoreData = {
+  products: [...INITIAL_PRODUCTS],
+  orders: [
+    {
+      id: 'GRJ-8491',
+      customerName: 'Hareshbhai Vora',
+      phone: '9825012345',
+      address: '102 Shivam Heights, Ring Road',
+      city: 'Rajkot',
+      pincode: '360005',
+      email: 'haresh.vora@example.com',
+      items: [
+        {
+          productId: 'prod-khakhra-1',
+          productName: 'Handcrafted Methi Khakhra',
+          optionLabel: '1 Packet (200g)',
+          flavor: 'Classic Methi',
+          quantity: 2,
+          unitPrice: 75,
+          totalPrice: 150
+        },
+        {
+          productId: 'prod-hing-1',
+          productName: 'Pure Royal Bandhani Hing',
+          optionLabel: '100 Grams Pack',
+          quantity: 1,
+          unitPrice: 300,
+          totalPrice: 300
+        }
+      ],
+      subtotal: 450,
+      deliveryFee: 0,
+      totalAmount: 450,
+      status: 'pending_confirmation',
+      createdAt: new Date(Date.now() - 3600000).toISOString(),
+      notes: 'Please leave with security if unavailable'
+    },
+    {
+      id: 'GRJ-8488',
+      customerName: 'Anjali Trivedi',
+      phone: '9909988776',
+      address: 'B-404 Satellite Apartments',
+      city: 'Ahmedabad',
+      pincode: '380015',
+      email: 'anjali.t@example.com',
+      items: [
+        {
+          productId: 'prod-farshan-1',
+          productName: 'Surti Melt-in-Mouth Vanela Gathiya',
+          optionLabel: '500g Pack',
+          flavor: 'Classic Surti Soft',
+          quantity: 2,
+          unitPrice: 210,
+          totalPrice: 420
+        }
+      ],
+      subtotal: 420,
+      deliveryFee: 40,
+      totalAmount: 460,
+      status: 'confirmed',
+      createdAt: new Date(Date.now() - 86400000).toISOString()
+    }
+  ],
+  reviews: [...INITIAL_REVIEWS],
+  bulkInquiries: [
+    {
+      id: 'BULK-101',
+      name: 'Ramesh Patel',
+      phone: '9898011223',
+      email: 'ramesh.events@example.com',
+      businessOrEvent: 'Navratri Garba Festival Catering',
+      eventDate: '2026-10-15',
+      expectedQuantity: '50 kg Gathiya + 100 Packets Khakhra',
+      productsInterested: ['Surti Vanela Gathiya', 'Handcrafted Methi Khakhra'],
+      message: 'Need vacuum packed boxes for guest gifts during Garba night.',
+      status: 'new',
+      createdAt: new Date(Date.now() - 72000000).toISOString()
+    }
+  ]
+};
+
+// Sync with Supabase asynchronously if configured
+async function syncFromSupabase() {
+  const supabase = getSupabase();
+  if (!supabase) return;
+
+  try {
+    const [pRes, oRes, rRes, bRes] = await Promise.all([
+      supabase.from('products').select('*'),
+      supabase.from('orders').select('*'),
+      supabase.from('reviews').select('*'),
+      supabase.from('bulk_inquiries').select('*')
+    ]);
+
+    if (!pRes.error && pRes.data && pRes.data.length > 0) {
+      store.products = pRes.data.map((p: any) => ({
+        id: p.id,
+        name: p.name,
+        gujaratiName: p.gujarati_name,
+        category: p.category,
+        description: p.description,
+        ingredients: p.ingredients,
+        imageUrl: p.image_url || p.image || '',
+        rating: Number(p.rating),
+        reviewCount: Number(p.review_count),
+        isBestSeller: Boolean(p.is_bestseller),
+        inStock: p.in_stock !== undefined ? Boolean(p.in_stock) : true,
+        options: typeof p.options === 'string' ? JSON.parse(p.options) : p.options,
+        flavors: typeof p.flavors === 'string' ? JSON.parse(p.flavors) : p.flavors,
+        saleType: p.sale_type || 'weight'
+      }));
+    }
+
+    if (!oRes.error && oRes.data && oRes.data.length > 0) {
+      store.orders = oRes.data.map((o: any) => ({
+        id: o.id,
+        customerName: o.customer_name,
+        phone: o.phone,
+        address: o.address,
+        city: o.city,
+        pincode: o.pincode,
+        email: o.email,
+        items: typeof o.items === 'string' ? JSON.parse(o.items) : o.items,
+        subtotal: Number(o.subtotal),
+        deliveryFee: Number(o.delivery_fee),
+        totalAmount: Number(o.total_amount),
+        status: o.status,
+        adminNotes: o.admin_notes,
+        notes: o.notes,
+        createdAt: o.created_at
+      }));
+    }
+
+    if (!rRes.error && rRes.data && rRes.data.length > 0) {
+      store.reviews = rRes.data.map((r: any) => ({
+        id: r.id,
+        productId: r.product_id,
+        productName: r.product_name,
+        customerName: r.customer_name,
+        rating: Number(r.rating),
+        comment: r.comment,
+        date: r.date,
+        isVerifiedPurchase: Boolean(r.is_verified_purchase)
+      }));
+    }
+
+    if (!bRes.error && bRes.data && bRes.data.length > 0) {
+      store.bulkInquiries = bRes.data.map((b: any) => ({
+        id: b.id,
+        name: b.name,
+        phone: b.phone,
+        email: b.email,
+        businessOrEvent: b.business_or_event,
+        eventDate: b.event_date,
+        expectedQuantity: b.expected_quantity,
+        productsInterested: typeof b.products_interested === 'string' ? JSON.parse(b.products_interested) : b.products_interested,
+        message: b.message,
+        status: b.status,
+        createdAt: b.created_at
+      }));
+    }
+
+    saveStore();
+    console.log('Successfully synced data with Supabase');
+  } catch (err) {
+    console.error('Supabase sync warning:', err);
+  }
+}
+
+// Save store to disk and optionally to Supabase
+function saveStore() {
+  try {
+    fs.writeFileSync(STORE_FILE, JSON.stringify(store, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Failed to save store file:', err);
+  }
+}
+
+async function saveProductToSupabase(product: Product) {
+  const supabase = getSupabase();
+  if (!supabase) return;
+  try {
+    await supabase.from('products').upsert({
+      id: product.id,
+      name: product.name,
+      gujarati_name: product.gujaratiName || null,
+      category: product.category,
+      description: product.description || null,
+      ingredients: product.ingredients || null,
+      image_url: product.imageUrl,
+      rating: product.rating,
+      review_count: product.reviewCount,
+      is_bestseller: product.isBestSeller || false,
+      in_stock: product.inStock ?? true,
+      options: product.options,
+      flavors: product.flavors || [],
+      sale_type: product.saleType || 'weight'
+    });
+  } catch (err) {
+    console.error('Failed to upsert product to Supabase:', err);
+  }
+}
+
+async function deleteProductFromSupabase(id: string) {
+  const supabase = getSupabase();
+  if (!supabase) return;
+  try {
+    await supabase.from('products').delete().eq('id', id);
+  } catch (err) {
+    console.error('Failed to delete product from Supabase:', err);
+  }
+}
+
+async function saveOrderToSupabase(order: Order) {
+  const supabase = getSupabase();
+  if (!supabase) return;
+  try {
+    await supabase.from('orders').upsert({
+      id: order.id,
+      customer_name: order.customerName,
+      phone: order.phone,
+      address: order.address,
+      city: order.city || null,
+      pincode: order.pincode || null,
+      email: order.email || null,
+      items: order.items,
+      subtotal: order.subtotal,
+      delivery_fee: order.deliveryFee,
+      total_amount: order.totalAmount,
+      status: order.status,
+      admin_notes: order.adminNotes || null,
+      notes: order.notes || null,
+      created_at: order.createdAt
+    });
+  } catch (err) {
+    console.error('Failed to upsert order to Supabase:', err);
+  }
+}
+
+async function saveReviewToSupabase(review: Review) {
+  const supabase = getSupabase();
+  if (!supabase) return;
+  try {
+    await supabase.from('reviews').upsert({
+      id: review.id,
+      product_id: review.productId,
+      product_name: review.productName,
+      customer_name: review.customerName,
+      rating: review.rating,
+      comment: review.comment,
+      date: review.date,
+      is_verified_purchase: review.isVerifiedPurchase ?? true
+    });
+  } catch (err) {
+    console.error('Failed to upsert review to Supabase:', err);
+  }
+}
+
+async function saveBulkInquiryToSupabase(inquiry: BulkInquiry) {
+  const supabase = getSupabase();
+  if (!supabase) return;
+  try {
+    await supabase.from('bulk_inquiries').upsert({
+      id: inquiry.id,
+      name: inquiry.name,
+      phone: inquiry.phone,
+      email: inquiry.email || null,
+      business_or_event: inquiry.businessOrEvent || null,
+      event_date: inquiry.eventDate || null,
+      expected_quantity: inquiry.expectedQuantity,
+      products_interested: inquiry.productsInterested || [],
+      message: inquiry.message || null,
+      status: inquiry.status,
+      created_at: inquiry.createdAt
+    });
+  } catch (err) {
+    console.error('Failed to upsert bulk inquiry to Supabase:', err);
+  }
+}
+
+// Load store from disk
+function loadStore() {
+  try {
+    if (fs.existsSync(STORE_FILE)) {
+      const data = fs.readFileSync(STORE_FILE, 'utf-8');
+      const parsed = JSON.parse(data);
+      if (parsed && Array.isArray(parsed.products)) {
+        store = parsed;
+      }
+    }
+  } catch (err) {
+    console.error('Failed to load store file, using default data:', err);
+  }
+}
+
+loadStore();
+syncFromSupabase();
+
+// ================= API ROUTES =================
+
+// Supabase Status & Schema Route for Admin
+app.get('/api/supabase/status', (req, res) => {
+  const supabase = getSupabase();
+  res.json({
+    configured: Boolean(supabase),
+    supabaseUrl: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || null,
+    sqlSchema: SUPABASE_SQL_SCHEMA
+  });
+});
+
+// 1. Get All Products
+app.get('/api/products', (req, res) => {
+  const { category, search } = req.query;
+  let list = store.products;
+
+  if (category && category !== 'all') {
+    list = list.filter((p) => p.category === category);
+  }
+
+  if (search && typeof search === 'string') {
+    const query = search.toLowerCase();
+    list = list.filter(
+      (p) =>
+        p.name.toLowerCase().includes(query) ||
+        (p.gujaratiName && p.gujaratiName.toLowerCase().includes(query)) ||
+        p.description.toLowerCase().includes(query)
+    );
+  }
+
+  res.json({ products: list });
+});
+
+// 2. Add Product (Admin)
+app.post('/api/products', (req, res) => {
+  const newProduct: Product = {
+    ...req.body,
+    id: `prod-${Date.now()}`,
+    rating: req.body.rating || 5.0,
+    reviewCount: req.body.reviewCount || 0
+  };
+
+  store.products.unshift(newProduct);
+  saveStore();
+  saveProductToSupabase(newProduct);
+  res.status(201).json({ product: newProduct });
+});
+
+// 3. Update Product (Admin)
+app.put('/api/products/:id', (req, res) => {
+  const { id } = req.params;
+  const index = store.products.findIndex((p) => p.id === id);
+  if (index === -1) {
+    return res.status(404).json({ error: 'Product not found' });
+  }
+
+  store.products[index] = {
+    ...store.products[index],
+    ...req.body
+  };
+  saveStore();
+  saveProductToSupabase(store.products[index]);
+  res.json({ product: store.products[index] });
+});
+
+// 4. Delete Product (Admin)
+app.delete('/api/products/:id', (req, res) => {
+  const { id } = req.params;
+  store.products = store.products.filter((p) => p.id !== id);
+  saveStore();
+  deleteProductFromSupabase(id);
+  res.json({ success: true, message: 'Product deleted successfully' });
+});
+
+// 5. Get All Orders (Admin)
+app.get('/api/orders', (req, res) => {
+  res.json({ orders: store.orders });
+});
+
+// 6. Create Order (Customer)
+app.post('/api/orders', (req, res) => {
+  const { customerName, phone, address, city, pincode, email, items, subtotal, deliveryFee, notes } = req.body;
+
+  if (!customerName || !phone || !address || !items || !items.length) {
+    return res.status(400).json({ error: 'Missing required customer details or items' });
+  }
+
+  const randomNum = Math.floor(1000 + Math.random() * 9000);
+  const newOrder: Order = {
+    id: `GRJ-${randomNum}`,
+    customerName,
+    phone,
+    address,
+    city: city || 'Gujarat',
+    pincode: pincode || '',
+    email: email || '',
+    items,
+    subtotal: subtotal || 0,
+    deliveryFee: deliveryFee || 0,
+    totalAmount: (subtotal || 0) + (deliveryFee || 0),
+    status: 'pending_confirmation', // OWNER HAS NOT CONFIRMED YET
+    createdAt: new Date().toISOString(),
+    notes: notes || ''
+  };
+
+  store.orders.unshift(newOrder);
+  saveStore();
+  saveOrderToSupabase(newOrder);
+
+  res.status(201).json({ order: newOrder });
+});
+
+// 7. Track Order by Phone or Order ID
+app.get('/api/orders/track', (req, res) => {
+  const { query } = req.query;
+  if (!query || typeof query !== 'string') {
+    return res.status(400).json({ error: 'Please provide phone number or order ID' });
+  }
+
+  const cleanQuery = query.trim().toLowerCase();
+  const matched = store.orders.filter(
+    (o) =>
+      o.id.toLowerCase() === cleanQuery ||
+      o.phone.includes(cleanQuery) ||
+      o.customerName.toLowerCase().includes(cleanQuery)
+  );
+
+  res.json({ orders: matched });
+});
+
+// 8. Update Order Status (Admin Confirm / Cancel)
+app.put('/api/orders/:id/status', (req, res) => {
+  const { id } = req.params;
+  const { status, adminNotes } = req.body;
+
+  const order = store.orders.find((o) => o.id === id);
+  if (!order) {
+    return res.status(404).json({ error: 'Order not found' });
+  }
+
+  order.status = status;
+  if (adminNotes !== undefined) {
+    order.adminNotes = adminNotes;
+  }
+
+  saveStore();
+  saveOrderToSupabase(order);
+  res.json({ order });
+});
+
+// 9. Get Reviews
+app.get('/api/reviews', (req, res) => {
+  const { productId } = req.query;
+  let list = store.reviews;
+  if (productId && typeof productId === 'string') {
+    list = list.filter((r) => r.productId === productId);
+  }
+  res.json({ reviews: list });
+});
+
+// 10. Post Review
+app.post('/api/reviews', (req, res) => {
+  const { productId, productName, customerName, rating, comment } = req.body;
+
+  if (!customerName || !rating || !comment) {
+    return res.status(400).json({ error: 'Name, rating, and comment are required' });
+  }
+
+  const newReview: Review = {
+    id: `rev-${Date.now()}`,
+    productId: productId || 'storewide',
+    productName: productName || 'Store Experience',
+    customerName,
+    rating: Number(rating),
+    comment,
+    date: new Date().toISOString().split('T')[0],
+    isVerifiedPurchase: true
+  };
+
+  store.reviews.unshift(newReview);
+  saveReviewToSupabase(newReview);
+
+  // Update product average rating
+  if (productId) {
+    const prod = store.products.find((p) => p.id === productId);
+    if (prod) {
+      const prodReviews = store.reviews.filter((r) => r.productId === productId);
+      const sum = prodReviews.reduce((acc, curr) => acc + curr.rating, 0);
+      prod.reviewCount = prodReviews.length;
+      prod.rating = Number((sum / prodReviews.length).toFixed(1));
+      saveProductToSupabase(prod);
+    }
+  }
+
+  saveStore();
+  res.status(201).json({ review: newReview });
+});
+
+// 11. Get Bulk Inquiries
+app.get('/api/bulk-inquiries', (req, res) => {
+  res.json({ inquiries: store.bulkInquiries });
+});
+
+// 12. Submit Bulk Inquiry
+app.post('/api/bulk-inquiries', (req, res) => {
+  const { name, phone, email, businessOrEvent, eventDate, expectedQuantity, productsInterested, message } = req.body;
+
+  if (!name || !phone || !expectedQuantity) {
+    return res.status(400).json({ error: 'Name, Phone and Expected Quantity are required' });
+  }
+
+  const newInquiry: BulkInquiry = {
+    id: `BULK-${Math.floor(100 + Math.random() * 900)}`,
+    name,
+    phone,
+    email: email || '',
+    businessOrEvent: businessOrEvent || 'General Bulk Inquiry',
+    eventDate: eventDate || '',
+    expectedQuantity,
+    productsInterested: productsInterested || [],
+    message: message || '',
+    status: 'new',
+    createdAt: new Date().toISOString()
+  };
+
+  store.bulkInquiries.unshift(newInquiry);
+  saveStore();
+  saveBulkInquiryToSupabase(newInquiry);
+  res.status(201).json({ inquiry: newInquiry });
+});
+
+// 13. Update Bulk Inquiry Status (Admin)
+app.put('/api/bulk-inquiries/:id/status', (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+
+  const inquiry = store.bulkInquiries.find((b) => b.id === id);
+  if (!inquiry) {
+    return res.status(404).json({ error: 'Inquiry not found' });
+  }
+
+  inquiry.status = status;
+  saveStore();
+  saveBulkInquiryToSupabase(inquiry);
+  res.json({ inquiry });
+});
+
+// 14. Admin Overview Stats
+app.get('/api/stats', (req, res) => {
+  const totalOrders = store.orders.length;
+  const pendingOrders = store.orders.filter((o) => o.status === 'pending_confirmation').length;
+  const confirmedOrders = store.orders.filter((o) => o.status === 'confirmed' || o.status === 'dispatched').length;
+  const totalRevenue = store.orders
+    .filter((o) => o.status !== 'cancelled')
+    .reduce((sum, o) => sum + o.totalAmount, 0);
+  const totalProducts = store.products.length;
+  const totalBulkInquiries = store.bulkInquiries.length;
+
+  res.json({
+    totalOrders,
+    pendingOrders,
+    confirmedOrders,
+    totalRevenue,
+    totalProducts,
+    totalBulkInquiries
+  });
+});
+
+// ================= VITE / STATIC MIDDLEWARE =================
+async function startServer() {
+  if (process.env.NODE_ENV !== 'production') {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: 'spa'
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), 'dist');
+    app.use(express.static(distPath));
+    app.get('*', (req, res) => {
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
+  }
+
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Swagatam Gujarati Farshan & Hing Store server running on http://0.0.0.0:${PORT}`);
+  });
+}
+
+startServer();
