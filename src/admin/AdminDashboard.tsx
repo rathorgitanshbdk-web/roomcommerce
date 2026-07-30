@@ -146,7 +146,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
         body: JSON.stringify({ supabaseUrl: manualUrl, supabaseKey: manualKey }),
       });
 
-      const data = await res.json();
+      const text = await res.text();
+      let data: any = {};
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        data = { error: `Server error (${res.status}): ${text.replace(/<[^>]*>?/gm, '').slice(0, 180)}` };
+      }
+
       if (res.ok && data.success) {
         setConnectMsg({
           type: data.pingSuccess ? 'success' : 'error',
@@ -161,7 +168,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
         });
         loadAllData();
       } else {
-        setConnectMsg({ type: 'error', text: data.error || 'Failed to connect' });
+        setConnectMsg({ type: 'error', text: data.error || 'Failed to connect to Supabase.' });
       }
     } catch (err: any) {
       setConnectMsg({ type: 'error', text: err.message || 'Connection request failed' });

@@ -108,6 +108,16 @@ let store: StoreData = {
   ]
 };
 
+function safeJsonParse(val: any, fallback: any) {
+  if (val === null || val === undefined) return fallback;
+  if (typeof val !== 'string') return val;
+  try {
+    return JSON.parse(val);
+  } catch {
+    return fallback;
+  }
+}
+
 // Sync with Supabase asynchronously if configured
 async function syncFromSupabase() {
   const supabase = getSupabase();
@@ -130,12 +140,12 @@ async function syncFromSupabase() {
         description: p.description,
         ingredients: p.ingredients,
         imageUrl: p.image_url || p.image || '',
-        rating: Number(p.rating),
-        reviewCount: Number(p.review_count),
+        rating: Number(p.rating || 5),
+        reviewCount: Number(p.review_count || 0),
         isBestSeller: Boolean(p.is_bestseller),
         inStock: p.in_stock !== undefined ? Boolean(p.in_stock) : true,
-        options: typeof p.options === 'string' ? JSON.parse(p.options) : p.options,
-        flavors: typeof p.flavors === 'string' ? JSON.parse(p.flavors) : p.flavors,
+        options: safeJsonParse(p.options, []),
+        flavors: safeJsonParse(p.flavors, []),
         saleType: p.sale_type || 'weight'
       }));
     }
@@ -149,10 +159,10 @@ async function syncFromSupabase() {
         city: o.city,
         pincode: o.pincode,
         email: o.email,
-        items: typeof o.items === 'string' ? JSON.parse(o.items) : o.items,
-        subtotal: Number(o.subtotal),
-        deliveryFee: Number(o.delivery_fee),
-        totalAmount: Number(o.total_amount),
+        items: safeJsonParse(o.items, []),
+        subtotal: Number(o.subtotal || 0),
+        deliveryFee: Number(o.delivery_fee || 0),
+        totalAmount: Number(o.total_amount || 0),
         status: o.status,
         adminNotes: o.admin_notes,
         notes: o.notes,
@@ -166,7 +176,7 @@ async function syncFromSupabase() {
         productId: r.product_id,
         productName: r.product_name,
         customerName: r.customer_name,
-        rating: Number(r.rating),
+        rating: Number(r.rating || 5),
         comment: r.comment,
         date: r.date,
         isVerifiedPurchase: Boolean(r.is_verified_purchase)
@@ -182,7 +192,7 @@ async function syncFromSupabase() {
         businessOrEvent: b.business_or_event,
         eventDate: b.event_date,
         expectedQuantity: b.expected_quantity,
-        productsInterested: typeof b.products_interested === 'string' ? JSON.parse(b.products_interested) : b.products_interested,
+        productsInterested: safeJsonParse(b.products_interested, []),
         message: b.message,
         status: b.status,
         createdAt: b.created_at
