@@ -1,15 +1,53 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
+let customSupabaseUrl: string | null = null;
+let customSupabaseKey: string | null = null;
 let supabaseClient: SupabaseClient | null = null;
+
+export function setCustomSupabaseCredentials(url: string, key: string) {
+  customSupabaseUrl = url;
+  customSupabaseKey = key;
+  supabaseClient = null; // reset cached client
+}
+
+export function getSupabaseCredentials(): { url: string; key: string } | null {
+  const rawUrl = customSupabaseUrl ||
+    process.env.SUPABASE_URL ||
+    process.env.VITE_SUPABASE_URL ||
+    process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    process.env.REACT_APP_SUPABASE_URL;
+
+  const rawKey = customSupabaseKey ||
+    process.env.SUPABASE_KEY ||
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_ANON_KEY ||
+    process.env.SUPABASE_SERVICE_KEY ||
+    process.env.SUPABASE_SECRET_KEY ||
+    process.env.SUPABASE_API_KEY ||
+    process.env.SUPABASE_ANON ||
+    process.env.VITE_SUPABASE_ANON_KEY ||
+    process.env.VITE_SUPABASE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  let url = rawUrl ? rawUrl.trim().replace(/^["']|["']$/g, '') : '';
+  const key = rawKey ? rawKey.trim().replace(/^["']|["']$/g, '') : '';
+
+  if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
+    url = `https://${url}`;
+  }
+
+  if (url && key) {
+    return { url, key };
+  }
+  return null;
+}
 
 export function getSupabase(): SupabaseClient | null {
   if (!supabaseClient) {
-    const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-
-    if (supabaseUrl && supabaseKey) {
+    const creds = getSupabaseCredentials();
+    if (creds) {
       try {
-        supabaseClient = createClient(supabaseUrl, supabaseKey);
+        supabaseClient = createClient(creds.url, creds.key);
       } catch (err) {
         console.error('Failed to initialize Supabase client:', err);
         supabaseClient = null;

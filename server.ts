@@ -4,7 +4,7 @@ import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import { INITIAL_PRODUCTS, INITIAL_REVIEWS } from './src/data/initialData.js';
 import { Product, Order, Review, BulkInquiry } from './src/types.js';
-import { getSupabase, SUPABASE_SQL_SCHEMA } from './src/lib/supabase.js';
+import { getSupabase, setCustomSupabaseCredentials, getSupabaseCredentials, SUPABASE_SQL_SCHEMA } from './src/lib/supabase.js';
 
 const app = express();
 const PORT = 3000;
@@ -12,13 +12,19 @@ const PORT = 3000;
 app.use(express.json());
 
 // In-memory data store with file persistence and Supabase synchronization
-const STORE_FILE = path.join(process.cwd(), 'data_store.json');
+const STORE_FILE = process.env.VERCEL
+  ? path.join('/tmp', 'data_store.json')
+  : path.join(process.cwd(), 'data_store.json');
 
 interface StoreData {
   products: Product[];
   orders: Order[];
   reviews: Review[];
   bulkInquiries: BulkInquiry[];
+  supabaseConfig?: {
+    url: string;
+    key: string;
+  };
 }
 
 let store: StoreData = {
@@ -203,7 +209,7 @@ async function saveProductToSupabase(product: Product) {
   const supabase = getSupabase();
   if (!supabase) return;
   try {
-    await supabase.from('products').upsert({
+    const { error } = await supabase.from('products').upsert({
       id: product.id,
       name: product.name,
       gujarati_name: product.gujaratiName || null,
@@ -219,6 +225,9 @@ async function saveProductToSupabase(product: Product) {
       flavors: product.flavors || [],
       sale_type: product.saleType || 'weight'
     });
+    if (error) {
+      console.error('Failed to upsert product to Supabase:', error.message || error);
+    }
   } catch (err) {
     console.error('Failed to upsert product to Supabase:', err);
   }
@@ -228,7 +237,10 @@ async function deleteProductFromSupabase(id: string) {
   const supabase = getSupabase();
   if (!supabase) return;
   try {
-    await supabase.from('products').delete().eq('id', id);
+    const { error } = await supabase.from('products').delete().eq('id', id);
+    if (error) {
+      console.error('Failed to delete product from Supabase:', error.message || error);
+    }
   } catch (err) {
     console.error('Failed to delete product from Supabase:', err);
   }
@@ -238,7 +250,7 @@ async function saveOrderToSupabase(order: Order) {
   const supabase = getSupabase();
   if (!supabase) return;
   try {
-    await supabase.from('orders').upsert({
+    const { error } = await supabase.from('orders').upsert({
       id: order.id,
       customer_name: order.customerName,
       phone: order.phone,
@@ -255,6 +267,9 @@ async function saveOrderToSupabase(order: Order) {
       notes: order.notes || null,
       created_at: order.createdAt
     });
+    if (error) {
+      console.error('Failed to upsert order to Supabase:', error.message || error);
+    }
   } catch (err) {
     console.error('Failed to upsert order to Supabase:', err);
   }
@@ -264,7 +279,7 @@ async function saveReviewToSupabase(review: Review) {
   const supabase = getSupabase();
   if (!supabase) return;
   try {
-    await supabase.from('reviews').upsert({
+    const { error } = await supabase.from('reviews').upsert({
       id: review.id,
       product_id: review.productId,
       product_name: review.productName,
@@ -274,6 +289,9 @@ async function saveReviewToSupabase(review: Review) {
       date: review.date,
       is_verified_purchase: review.isVerifiedPurchase ?? true
     });
+    if (error) {
+      console.error('Failed to upsert review to Supabase:', error.message || error);
+    }
   } catch (err) {
     console.error('Failed to upsert review to Supabase:', err);
   }
@@ -283,7 +301,7 @@ async function saveBulkInquiryToSupabase(inquiry: BulkInquiry) {
   const supabase = getSupabase();
   if (!supabase) return;
   try {
-    await supabase.from('bulk_inquiries').upsert({
+    const { error } = await supabase.from('bulk_inquiries').upsert({
       id: inquiry.id,
       name: inquiry.name,
       phone: inquiry.phone,
@@ -296,6 +314,9 @@ async function saveBulkInquiryToSupabase(inquiry: BulkInquiry) {
       status: inquiry.status,
       created_at: inquiry.createdAt
     });
+    if (error) {
+      console.error('Failed to upsert bulk inquiry to Supabase:', error.message || error);
+    }
   } catch (err) {
     console.error('Failed to upsert bulk inquiry to Supabase:', err);
   }
@@ -309,6 +330,9 @@ function loadStore() {
       const parsed = JSON.parse(data);
       if (parsed && Array.isArray(parsed.products)) {
         store = parsed;
+        if (store.supabaseConfig?.url && store.supabaseConfig?.key) {
+          setCustomSupabaseCredentials(store.supabaseConfig.url, store.supabaseConfig.key);
+        }
       }
     }
   } catch (err) {
@@ -320,87 +344,199 @@ loadStore();
 syncFromSupabase();
 
 // ================= API ROUTES =================
+const apiRouter = express.Router();
 
 // Supabase Status & Schema Route for Admin
-app.get('/api/supabase/status', (req, res) => {
-  const supabase = getSupabase();
-  res.json({
-    configured: Boolean(supabase),
-    supabaseUrl: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || null,
-    sqlSchema: SUPABASE_SQL_SCHEMA
-  });
+apiRouter.get('/supabase/status', async (req, res) => {
+  try {
+    const supabase = getSupabase();
+    const creds = getSupabaseCredentials();
+    let pingSuccess = false;
+    let pingError: string | null = null;
+
+    if (supabase) {
+      try {
+        const { error } = await supabase.from('products').select('id').limit(1);
+        if (error) {
+          pingError = error.message;
+        } else {
+          pingSuccess = true;
+        }
+      } catch (err: any) {
+        pingError = err?.message || 'Network error pinging Supabase';
+      }
+    }
+
+    res.json({
+      configured: Boolean(supabase),
+      supabaseUrl: creds?.url || null,
+      pingSuccess,
+      pingError,
+      sqlSchema: SUPABASE_SQL_SCHEMA
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to check status' });
+  }
+});
+
+// Connect Supabase directly via URL & Key
+apiRouter.post('/supabase/connect', async (req, res) => {
+  try {
+    const { supabaseUrl, supabaseKey } = req.body;
+    if (!supabaseUrl || !supabaseKey) {
+      return res.status(400).json({ error: 'Both Supabase URL and Key are required.' });
+    }
+
+    let cleanUrl = supabaseUrl.trim().replace(/^["']|["']$/g, '');
+    const cleanKey = supabaseKey.trim().replace(/^["']|["']$/g, '');
+
+    if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+      cleanUrl = `https://${cleanUrl}`;
+    }
+
+    setCustomSupabaseCredentials(cleanUrl, cleanKey);
+    store.supabaseConfig = { url: cleanUrl, key: cleanKey };
+    saveStore();
+
+    // Re-test connection immediately
+    const supabase = getSupabase();
+    let pingSuccess = false;
+    let pingError: string | null = null;
+
+    if (supabase) {
+      try {
+        const { error } = await supabase.from('products').select('id').limit(1);
+        if (error) {
+          pingError = error.message;
+        } else {
+          pingSuccess = true;
+        }
+      } catch (e: any) {
+        pingError = e?.message || 'Failed to connect';
+      }
+    }
+
+    // Trigger sync
+    syncFromSupabase();
+
+    res.json({
+      success: true,
+      configured: Boolean(supabase),
+      supabaseUrl: cleanUrl,
+      pingSuccess,
+      pingError,
+      message: pingSuccess 
+        ? 'Successfully connected & verified Supabase!' 
+        : (pingError ? `Client created, but test query returned: ${pingError}. Make sure SQL schema is executed!` : 'Supabase credentials saved!')
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to connect to Supabase' });
+  }
 });
 
 // 1. Get All Products
-app.get('/api/products', (req, res) => {
-  const { category, search } = req.query;
-  let list = store.products;
+apiRouter.get('/products', (req, res) => {
+  try {
+    const { category, search } = req.query;
+    let list = store.products;
 
-  if (category && category !== 'all') {
-    list = list.filter((p) => p.category === category);
+    if (category && category !== 'all') {
+      list = list.filter((p) => p.category === category);
+    }
+
+    if (search && typeof search === 'string') {
+      const query = search.toLowerCase();
+      list = list.filter(
+        (p) =>
+          p.name.toLowerCase().includes(query) ||
+          (p.gujaratiName && p.gujaratiName.toLowerCase().includes(query)) ||
+          p.description.toLowerCase().includes(query)
+      );
+    }
+
+    res.json({ products: list });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to fetch products' });
   }
-
-  if (search && typeof search === 'string') {
-    const query = search.toLowerCase();
-    list = list.filter(
-      (p) =>
-        p.name.toLowerCase().includes(query) ||
-        (p.gujaratiName && p.gujaratiName.toLowerCase().includes(query)) ||
-        p.description.toLowerCase().includes(query)
-    );
-  }
-
-  res.json({ products: list });
 });
 
 // 2. Add Product (Admin)
-app.post('/api/products', (req, res) => {
-  const newProduct: Product = {
-    ...req.body,
-    id: `prod-${Date.now()}`,
-    rating: req.body.rating || 5.0,
-    reviewCount: req.body.reviewCount || 0
-  };
+apiRouter.post('/products', async (req, res) => {
+  try {
+    const body = req.body || {};
+    if (!body.name || !body.category) {
+      return res.status(400).json({ error: 'Product name and category are required' });
+    }
 
-  store.products.unshift(newProduct);
-  saveStore();
-  saveProductToSupabase(newProduct);
-  res.status(201).json({ product: newProduct });
+    const newProduct: Product = {
+      ...body,
+      id: `prod-${Date.now()}`,
+      name: body.name,
+      category: body.category,
+      description: body.description || '',
+      imageUrl: body.imageUrl || 'https://images.unsplash.com/photo-1601050690597-df0568f70950?auto=format&fit=crop&q=80&w=800',
+      rating: Number(body.rating) || 5.0,
+      reviewCount: Number(body.reviewCount) || 0,
+      inStock: body.inStock ?? true,
+      isBestSeller: Boolean(body.isBestSeller),
+      saleType: body.saleType || 'weight',
+      options: body.options || []
+    };
+
+    store.products.unshift(newProduct);
+    saveStore();
+    await saveProductToSupabase(newProduct);
+    return res.status(201).json({ product: newProduct });
+  } catch (err: any) {
+    console.error('Error creating product:', err);
+    return res.status(500).json({ error: err?.message || 'Failed to create product' });
+  }
 });
 
 // 3. Update Product (Admin)
-app.put('/api/products/:id', (req, res) => {
-  const { id } = req.params;
-  const index = store.products.findIndex((p) => p.id === id);
-  if (index === -1) {
-    return res.status(404).json({ error: 'Product not found' });
-  }
+apiRouter.put('/products/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const body = req.body || {};
+    const index = store.products.findIndex((p) => p.id === id);
+    if (index === -1) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
 
-  store.products[index] = {
-    ...store.products[index],
-    ...req.body
-  };
-  saveStore();
-  saveProductToSupabase(store.products[index]);
-  res.json({ product: store.products[index] });
+    store.products[index] = {
+      ...store.products[index],
+      ...body
+    };
+    saveStore();
+    await saveProductToSupabase(store.products[index]);
+    return res.json({ product: store.products[index] });
+  } catch (err: any) {
+    console.error('Error updating product:', err);
+    return res.status(500).json({ error: err?.message || 'Failed to update product' });
+  }
 });
 
 // 4. Delete Product (Admin)
-app.delete('/api/products/:id', (req, res) => {
-  const { id } = req.params;
-  store.products = store.products.filter((p) => p.id !== id);
-  saveStore();
-  deleteProductFromSupabase(id);
-  res.json({ success: true, message: 'Product deleted successfully' });
+apiRouter.delete('/products/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    store.products = store.products.filter((p) => p.id !== id);
+    saveStore();
+    await deleteProductFromSupabase(id);
+    return res.json({ success: true, message: 'Product deleted successfully' });
+  } catch (err: any) {
+    console.error('Error deleting product:', err);
+    return res.status(500).json({ error: err?.message || 'Failed to delete product' });
+  }
 });
 
 // 5. Get All Orders (Admin)
-app.get('/api/orders', (req, res) => {
+apiRouter.get('/orders', (req, res) => {
   res.json({ orders: store.orders });
 });
 
 // 6. Create Order (Customer)
-app.post('/api/orders', (req, res) => {
+apiRouter.post('/orders', (req, res) => {
   const { customerName, phone, address, city, pincode, email, items, subtotal, deliveryFee, notes } = req.body;
 
   if (!customerName || !phone || !address || !items || !items.length) {
@@ -420,7 +556,7 @@ app.post('/api/orders', (req, res) => {
     subtotal: subtotal || 0,
     deliveryFee: deliveryFee || 0,
     totalAmount: (subtotal || 0) + (deliveryFee || 0),
-    status: 'pending_confirmation', // OWNER HAS NOT CONFIRMED YET
+    status: 'pending_confirmation',
     createdAt: new Date().toISOString(),
     notes: notes || ''
   };
@@ -433,7 +569,7 @@ app.post('/api/orders', (req, res) => {
 });
 
 // 7. Track Order by Phone or Order ID
-app.get('/api/orders/track', (req, res) => {
+apiRouter.get('/orders/track', (req, res) => {
   const { query } = req.query;
   if (!query || typeof query !== 'string') {
     return res.status(400).json({ error: 'Please provide phone number or order ID' });
@@ -451,7 +587,7 @@ app.get('/api/orders/track', (req, res) => {
 });
 
 // 8. Update Order Status (Admin Confirm / Cancel)
-app.put('/api/orders/:id/status', (req, res) => {
+apiRouter.put('/orders/:id/status', (req, res) => {
   const { id } = req.params;
   const { status, adminNotes } = req.body;
 
@@ -471,7 +607,7 @@ app.put('/api/orders/:id/status', (req, res) => {
 });
 
 // 9. Get Reviews
-app.get('/api/reviews', (req, res) => {
+apiRouter.get('/reviews', (req, res) => {
   const { productId } = req.query;
   let list = store.reviews;
   if (productId && typeof productId === 'string') {
@@ -481,7 +617,7 @@ app.get('/api/reviews', (req, res) => {
 });
 
 // 10. Post Review
-app.post('/api/reviews', (req, res) => {
+apiRouter.post('/reviews', (req, res) => {
   const { productId, productName, customerName, rating, comment } = req.body;
 
   if (!customerName || !rating || !comment) {
@@ -502,7 +638,6 @@ app.post('/api/reviews', (req, res) => {
   store.reviews.unshift(newReview);
   saveReviewToSupabase(newReview);
 
-  // Update product average rating
   if (productId) {
     const prod = store.products.find((p) => p.id === productId);
     if (prod) {
@@ -519,12 +654,12 @@ app.post('/api/reviews', (req, res) => {
 });
 
 // 11. Get Bulk Inquiries
-app.get('/api/bulk-inquiries', (req, res) => {
+apiRouter.get('/bulk-inquiries', (req, res) => {
   res.json({ inquiries: store.bulkInquiries });
 });
 
 // 12. Submit Bulk Inquiry
-app.post('/api/bulk-inquiries', (req, res) => {
+apiRouter.post('/bulk-inquiries', (req, res) => {
   const { name, phone, email, businessOrEvent, eventDate, expectedQuantity, productsInterested, message } = req.body;
 
   if (!name || !phone || !expectedQuantity) {
@@ -552,7 +687,7 @@ app.post('/api/bulk-inquiries', (req, res) => {
 });
 
 // 13. Update Bulk Inquiry Status (Admin)
-app.put('/api/bulk-inquiries/:id/status', (req, res) => {
+apiRouter.put('/bulk-inquiries/:id/status', (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
 
@@ -568,7 +703,7 @@ app.put('/api/bulk-inquiries/:id/status', (req, res) => {
 });
 
 // 14. Admin Overview Stats
-app.get('/api/stats', (req, res) => {
+apiRouter.get('/stats', (req, res) => {
   const totalOrders = store.orders.length;
   const pendingOrders = store.orders.filter((o) => o.status === 'pending_confirmation').length;
   const confirmedOrders = store.orders.filter((o) => o.status === 'confirmed' || o.status === 'dispatched').length;
@@ -587,6 +722,9 @@ app.get('/api/stats', (req, res) => {
     totalBulkInquiries
   });
 });
+
+app.use('/api', apiRouter);
+app.use('/', apiRouter);
 
 // ================= VITE / STATIC MIDDLEWARE =================
 async function startServer() {
@@ -609,4 +747,8 @@ async function startServer() {
   });
 }
 
-startServer();
+if (!process.env.VERCEL) {
+  startServer();
+}
+
+export default app;

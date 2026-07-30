@@ -36,6 +36,8 @@ import {
 } from '../services/api';
 import { AddProductModal } from './AddProductModal';
 
+import { SUPABASE_SQL_SCHEMA } from '../lib/supabase';
+
 interface AdminDashboardProps {
   onBackToShop: () => void;
 }
@@ -50,8 +52,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
 
   const [activeTab, setActiveTab] = useState<'overview' | 'orders' | 'products' | 'bulk' | 'database'>('overview');
 
-  const [supabaseInfo, setSupabaseInfo] = useState<{ configured: boolean; supabaseUrl: string | null; sqlSchema: string } | null>(null);
+  const [supabaseInfo, setSupabaseInfo] = useState<{ configured: boolean; supabaseUrl: string | null; pingSuccess?: boolean; pingError?: string | null; sqlSchema: string }>({
+    configured: false,
+    supabaseUrl: ((import.meta as any).env?.VITE_SUPABASE_URL as string) || null,
+    sqlSchema: SUPABASE_SQL_SCHEMA
+  });
   const [copiedSchema, setCopiedSchema] = useState(false);
+
+  // Manual Supabase Connect State
+  const [manualUrl, setManualUrl] = useState('');
+  const [manualKey, setManualKey] = useState('');
+  const [connectLoading, setConnectLoading] = useState(false);
+  const [connectMsg, setConnectMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Stats state
   const [stats, setStats] = useState<any>({
@@ -99,7 +111,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
         const supRes = await fetch('/api/supabase/status');
         if (supRes.ok) {
           const supData = await supRes.json();
-          setSupabaseInfo(supData);
+          setSupabaseInfo({
+            configured: Boolean(supData.configured),
+            supabaseUrl: supData.supabaseUrl || ((import.meta as any).env?.VITE_SUPABASE_URL as string) || null,
+            pingSuccess: supData.pingSuccess,
+            pingError: supData.pingError,
+            sqlSchema: supData.sqlSchema || SUPABASE_SQL_SCHEMA
+          });
         }
       } catch (e) {
         console.error('Failed to load Supabase status:', e);
@@ -108,6 +126,47 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
       console.error('Error loading admin data:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDirectConnect = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualUrl || !manualKey) {
+      setConnectMsg({ type: 'error', text: 'Please enter both Supabase URL and Key.' });
+      return;
+    }
+
+    setConnectLoading(true);
+    setConnectMsg(null);
+
+    try {
+      const res = await fetch('/api/supabase/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ supabaseUrl: manualUrl, supabaseKey: manualKey }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setConnectMsg({
+          type: data.pingSuccess ? 'success' : 'error',
+          text: data.message
+        });
+        setSupabaseInfo({
+          configured: Boolean(data.configured),
+          supabaseUrl: data.supabaseUrl,
+          pingSuccess: data.pingSuccess,
+          pingError: data.pingError,
+          sqlSchema: SUPABASE_SQL_SCHEMA
+        });
+        loadAllData();
+      } else {
+        setConnectMsg({ type: 'error', text: data.error || 'Failed to connect' });
+      }
+    } catch (err: any) {
+      setConnectMsg({ type: 'error', text: err.message || 'Connection request failed' });
+    } finally {
+      setConnectLoading(false);
     }
   };
 
@@ -876,34 +935,142 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
                 </div>
               </div>
 
-              {/* Status banner */}
+              {/* Status & Diagnostics Banner */}
               {supabaseInfo?.configured ? (
-                <div className="p-4 bg-emerald-950/40 border border-emerald-800/60 rounded-xl text-xs text-emerald-200 space-y-1">
-                  <div className="font-bold text-emerald-400 flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                    Supabase client connected!
+                <div className="p-4 bg-emerald-950/40 border border-emerald-800/60 rounded-xl text-xs text-emerald-200 space-y-2">
+                  <div className="font-bold text-emerald-400 flex items-center justify-between">
+                    <span className="flex items-center gap-2 text-sm">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                      Supabase Credentials Configured!
+                    </span>
+                    <span className="text-[11px] font-mono text-emerald-300/80 bg-emerald-900/60 px-2 py-0.5 rounded">
+                      {supabaseInfo.supabaseUrl}
+                    </span>
                   </div>
-                  <p className="text-emerald-300/80">
-                    URL: <code className="font-mono bg-emerald-900/60 px-1.5 py-0.5 rounded text-emerald-200">{supabaseInfo.supabaseUrl}</code>
-                  </p>
-                  <p className="text-emerald-300/80 text-[11px]">
-                    All new customer orders and product edits are seamlessly stored & synced with your Supabase database!
-                  </p>
+
+                  {supabaseInfo.pingSuccess ? (
+                    <div className="p-2.5 bg-emerald-900/40 border border-emerald-700/50 rounded-lg text-emerald-200 text-xs">
+                      ✅ <b>Database Table Ping Succeeded!</b> Your Supabase database is active, and tables are responding.
+                    </div>
+                  ) : (
+                    <div className="p-2.5 bg-amber-950/80 border border-amber-800/60 rounded-lg text-amber-200 text-xs space-y-1">
+                      <div className="font-bold text-amber-300">⚠️ Table Ping Warning:</div>
+                      <p>{supabaseInfo.pingError || 'Could not query "products" table.'}</p>
+                      <p className="text-[11px] text-amber-300/80">
+                        <b>Fix:</b> Please copy the SQL Script below and run it in your <b>Supabase SQL Editor</b> tab to create the required tables.
+                      </p>
+                    </div>
+                  )}
                 </div>
               ) : (
-                <div className="p-4 bg-slate-950 border border-slate-800 rounded-xl text-xs space-y-3">
-                  <div className="font-bold text-amber-400 flex items-center gap-2">
+                <div className="p-4 bg-amber-950/30 border border-amber-800/50 rounded-xl text-xs space-y-2 text-amber-200">
+                  <div className="font-bold text-amber-300 flex items-center gap-2">
                     <Clock className="w-4 h-4 text-amber-400" />
-                    How to Connect Your Supabase Credentials:
+                    Supabase Credentials Not Yet Active
                   </div>
-                  <ol className="list-decimal list-inside space-y-1 text-slate-300 leading-relaxed">
-                    <li>Go to your Supabase Project Settings → <b>API</b>.</li>
-                    <li>Copy your <b>Project URL</b> and <b>anon / service_role key</b>.</li>
-                    <li>Set <code className="text-cyan-400">SUPABASE_URL</code> and <code className="text-cyan-400">SUPABASE_KEY</code> in environment variables or <code className="text-cyan-400">.env</code>.</li>
-                    <li>Execute the SQL Schema script below in your Supabase <b>SQL Editor</b> tab.</li>
-                  </ol>
+                  <p className="text-slate-300">
+                    Enter your Supabase Project URL and API Key in the form below to connect directly, or configure Environment Variables in AI Studio Settings.
+                  </p>
                 </div>
               )}
+
+              {/* Direct Connect Form */}
+              <div className="p-5 bg-slate-950 border border-slate-800 rounded-xl space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
+                  <div>
+                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                      <Server className="w-4 h-4 text-cyan-400" />
+                      Option A: Connect Supabase Directly (Instant Setup)
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Paste your Project URL & Key here to connect immediately without waiting for environment re-deployments.
+                    </p>
+                  </div>
+                </div>
+
+                <form onSubmit={handleDirectConnect} className="space-y-4 text-xs">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="block text-slate-300 font-semibold">
+                        Supabase Project URL:
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="https://xyzproject.supabase.co"
+                        value={manualUrl}
+                        onChange={(e) => setManualUrl(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono text-xs"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-slate-300 font-semibold">
+                        Supabase Anon Key or Service Role Key:
+                      </label>
+                      <input
+                        type="password"
+                        placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6..."
+                        value={manualKey}
+                        onChange={(e) => setManualKey(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono text-xs"
+                      />
+                    </div>
+                  </div>
+
+                  {connectMsg && (
+                    <div className={`p-3 rounded-lg border text-xs ${
+                      connectMsg.type === 'success' 
+                        ? 'bg-emerald-950/80 border-emerald-800 text-emerald-200' 
+                        : 'bg-rose-950/80 border-rose-800 text-rose-200'
+                    }`}>
+                      {connectMsg.text}
+                    </div>
+                  )}
+
+                  <div className="flex justify-end">
+                    <button
+                      type="submit"
+                      disabled={connectLoading}
+                      className="px-5 py-2.5 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white text-xs font-bold rounded-lg shadow-lg shadow-cyan-950/50 flex items-center gap-2 transition-all"
+                    >
+                      {connectLoading ? (
+                        <>
+                          <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                          <span>Connecting & Verifying...</span>
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="w-4 h-4" />
+                          <span>Connect & Verify Supabase Now</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* Troubleshooting Breakdown */}
+              <div className="p-5 bg-slate-950/60 border border-slate-800/80 rounded-xl space-y-3 text-xs">
+                <h3 className="font-bold text-amber-400 flex items-center gap-2 text-sm">
+                  <Clock className="w-4 h-4 text-amber-400" />
+                  Option B: Environment Variables Breakdown & Troubleshooting
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-slate-300 leading-relaxed">
+                  <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-lg space-y-1.5">
+                    <div className="font-bold text-cyan-300">1. Environment Target Selection in Settings</div>
+                    <p className="text-[11px] text-slate-400">
+                      In the AI Studio Settings Environment Variables tab, check the <b>Environments</b> dropdown. You MUST check <b>Development</b> in addition to Production & Preview. If <i>Development</i> is unchecked, the active live preview container won't receive the variables.
+                    </p>
+                  </div>
+
+                  <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-lg space-y-1.5">
+                    <div className="font-bold text-cyan-300">2. Supabase SQL Schema Table Creation</div>
+                    <p className="text-[11px] text-slate-400">
+                      Supabase requires tables to exist before accepting reads/writes. If the URL and Key are set but tables haven't been created, queries will fail. Copy the SQL script below and paste it into your <b>Supabase SQL Editor</b>.
+                    </p>
+                  </div>
+                </div>
+              </div>
 
               {/* SQL Schema Copy Block */}
               <div className="space-y-2 pt-2">
