@@ -19,8 +19,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 }) => {
   const { t } = useLanguage();
 
-  if (!isOpen) return null;
-
   const [customerName, setCustomerName] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
@@ -31,6 +29,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+
+  if (!isOpen) return null;
 
   const subtotal = items.reduce((sum, item) => sum + item.totalPrice, 0);
   const deliveryFee = subtotal >= 499 || subtotal === 0 ? 0 : 40;

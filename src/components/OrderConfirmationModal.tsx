@@ -12,11 +12,15 @@ interface OrderConfirmationModalProps {
 export const OrderConfirmationModal: React.FC<OrderConfirmationModalProps> = ({ order: initialOrder, onClose }) => {
   const { t } = useLanguage();
 
-  if (!initialOrder) return null;
-
-  const [currentOrder, setCurrentOrder] = useState<Order>(initialOrder);
+  const [currentOrder, setCurrentOrder] = useState<Order | null>(initialOrder);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (initialOrder) {
+      setCurrentOrder(initialOrder);
+    }
+  }, [initialOrder]);
 
   // Poll server for live status updates every 4 seconds
   useEffect(() => {
@@ -34,7 +38,9 @@ export const OrderConfirmationModal: React.FC<OrderConfirmationModalProps> = ({ 
       }, 4000);
     }
     return () => clearInterval(interval);
-  }, [currentOrder.id, currentOrder.status]);
+  }, [currentOrder?.id, currentOrder?.status]);
+
+  if (!initialOrder || !currentOrder) return null;
 
   const handleManualRefresh = async () => {
     setIsRefreshing(true);

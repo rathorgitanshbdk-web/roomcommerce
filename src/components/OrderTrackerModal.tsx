@@ -12,12 +12,12 @@ interface OrderTrackerModalProps {
 export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({ isOpen, onClose }) => {
   const { t } = useLanguage();
 
-  if (!isOpen) return null;
-
   const [query, setQuery] = useState('');
   const [orders, setOrders] = useState<Order[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
+
+  if (!isOpen) return null;
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();

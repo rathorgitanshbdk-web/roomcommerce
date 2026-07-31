@@ -17,8 +17,6 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 }) => {
   const { t } = useLanguage();
 
-  if (!product) return null;
-
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loadingReviews, setLoadingReviews] = useState<boolean>(true);
 
@@ -31,16 +29,20 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 
   // Selection state
   const [selectedOption, setSelectedOption] = useState<WeightPriceOption>(
-    product.options[0] || { id: 'default', label: 'Standard', price: 100 }
+    product?.options?.[0] || { id: 'default', label: 'Standard', price: 100 }
   );
   const [selectedFlavor, setSelectedFlavor] = useState<string | undefined>(
-    product.flavors && product.flavors.length > 0 ? product.flavors[0] : undefined
+    product?.flavors && product.flavors.length > 0 ? product.flavors[0] : undefined
   );
   const [quantity, setQuantity] = useState<number>(1);
   const [isAdded, setIsAdded] = useState<boolean>(false);
 
   useEffect(() => {
     if (product) {
+      setSelectedOption(product.options?.[0] || { id: 'default', label: 'Standard', price: 100 });
+      setSelectedFlavor(product.flavors && product.flavors.length > 0 ? product.flavors[0] : undefined);
+      setQuantity(1);
+      setIsAdded(false);
       setLoadingReviews(true);
       fetchReviews(product.id)
         .then((data) => setReviews(data))
@@ -48,6 +50,8 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
         .finally(() => setLoadingReviews(false));
     }
   }, [product]);
+
+  if (!product) return null;
 
   const handleReviewSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
