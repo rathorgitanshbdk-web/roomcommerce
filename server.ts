@@ -9,6 +9,17 @@ const app = express();
 const PORT = 3000;
 
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use((req: any, _res: any, next: any) => {
+  if (req.body && typeof req.body === 'string') {
+    try {
+      req.body = JSON.parse(req.body);
+    } catch {
+      // Ignore invalid json string
+    }
+  }
+  next();
+});
 
 // In-memory data store with file persistence and Supabase synchronization
 const STORE_FILE = process.env.VERCEL
@@ -416,13 +427,14 @@ apiRouter.get('/supabase/status', async (req, res) => {
 // Connect Supabase directly via URL & Key
 apiRouter.post('/supabase/connect', async (req, res) => {
   try {
-    const { supabaseUrl, supabaseKey } = req.body;
+    const body = typeof req.body === 'string' ? safeJsonParse(req.body, {}) : (req.body || {});
+    const { supabaseUrl, supabaseKey } = body;
     if (!supabaseUrl || !supabaseKey) {
       return res.status(400).json({ error: 'Both Supabase URL and Key are required.' });
     }
 
-    let cleanUrl = supabaseUrl.trim().replace(/^["']|["']$/g, '');
-    const cleanKey = supabaseKey.trim().replace(/^["']|["']$/g, '');
+    let cleanUrl = String(supabaseUrl).trim().replace(/^["']|["']$/g, '');
+    const cleanKey = String(supabaseKey).trim().replace(/^["']|["']$/g, '');
 
     if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
       cleanUrl = `https://${cleanUrl}`;
@@ -450,8 +462,12 @@ apiRouter.post('/supabase/connect', async (req, res) => {
       }
     }
 
-    // Trigger sync
-    syncFromSupabase();
+    // Safely await sync so Vercel serverless context is not prematurely torn down
+    try {
+      await syncFromSupabase();
+    } catch (syncErr: any) {
+      console.error('Initial sync warning after connect:', syncErr?.message || syncErr);
+    }
 
     res.json({
       success: true,
@@ -464,6 +480,7 @@ apiRouter.post('/supabase/connect', async (req, res) => {
         : (pingError ? `Client created, but test query returned: ${pingError}. Make sure SQL schema is executed!` : 'Supabase credentials saved!')
     });
   } catch (err: any) {
+    console.error('Supabase connect handler error:', err);
     res.status(500).json({ error: err?.message || 'Failed to connect to Supabase' });
   }
 });
