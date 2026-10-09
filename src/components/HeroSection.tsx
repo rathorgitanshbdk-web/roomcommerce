@@ -53,7 +53,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onExploreClick, onBulk
               <HeartHandshake className="w-5 h-5 text-[#F59E0B] shrink-0" />
               <div className="text-left">
                 <p className="text-xs font-bold text-[#FEF3C7]">{t.storeDirect}</p>
-                <p className="text-[10px] text-[#FDE68A]/80">{t.ownerConfirmation}</p>
+                <p className="text-[10px] text-[#FDE68A]/80">{t.pickupandhomedelivery}</p>
               </div>
             </div>
           </div>

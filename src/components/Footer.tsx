@@ -72,12 +72,12 @@ export const Footer: React.FC<FooterProps> = ({
             <div className="flex items-start gap-1.5">
               <MapPin className="w-4 h-4 text-[#F59E0B] shrink-0 mt-0.5" />
               <span>
-                Giriraj Farshan & Hing Bhavan, Opposite Town Hall, Kalupur / Ring Road, Gujarat 380001
+                Giriraj Farshan & Hing Bhavan, Charampa, Near Hero Showroom / Bhadrak, Odisha 756100
               </span>
             </div>
             <div className="flex items-center gap-1.5">
               <Phone className="w-3.5 h-3.5 text-[#F59E0B] shrink-0" />
-              <span>Customer Helpline: +91 98250 12345 / 079-22145890</span>
+              <span>Customer Helpline: +91 7978 111 612 / 9937-411-311</span>
             </div>
             <div className="flex items-center gap-1.5">
               <Mail className="w-3.5 h-3.5 text-[#F59E0B] shrink-0" />
