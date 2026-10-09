@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShoppingBag, Search, ShieldCheck, Truck, PhoneCall, LayoutDashboard, Clock, Globe } from 'lucide-react';
+import { ShoppingBag, Search, ShieldCheck, Truck, PhoneCall, Clock, Globe } from 'lucide-react';
 import { useLanguage, Language } from '../context/LanguageContext';
 
 interface HeaderProps {
@@ -11,8 +11,8 @@ interface HeaderProps {
   onSelectCategory: (cat: string) => void;
   searchQuery: string;
   onSearchChange: (q: string) => void;
-  currentView: 'shop' | 'admin';
-  onToggleAdmin: (view: 'shop' | 'admin') => void;
+  currentView?: 'shop' | 'admin';
+  onToggleAdmin?: (view: 'shop' | 'admin') => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -24,7 +24,7 @@ export const Header: React.FC<HeaderProps> = ({
   onSelectCategory,
   searchQuery,
   onSearchChange,
-  currentView,
+  currentView = 'shop',
   onToggleAdmin,
 }) => {
   const { language, setLanguage, t } = useLanguage();
@@ -97,22 +97,13 @@ export const Header: React.FC<HeaderProps> = ({
             <Clock className="w-3 h-3 text-[#F59E0B]" />
             {t.trackOrderStatus}
           </button>
-          
-          <button
-            onClick={() => onToggleAdmin(currentView === 'admin' ? 'shop' : 'admin')}
-            className="flex items-center gap-1 text-[10px] text-[#FEF3C7]/40 hover:text-white transition-all opacity-40 hover:opacity-100 ml-1"
-            title="Store Admin Login"
-          >
-            <LayoutDashboard className="w-2.5 h-2.5" />
-            <span>Admin</span>
-          </button>
         </div>
       </div>
 
       {/* Main Nav Header */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
         {/* Brand Logo */}
-        <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => onToggleAdmin('shop')}>
+        <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => onToggleAdmin?.('shop')}>
           <div className="w-10 h-10 bg-[#D97706] rounded-full flex items-center justify-center text-white font-serif italic text-xl shadow-sm">
             S
           </div>

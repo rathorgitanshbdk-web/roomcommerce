@@ -1,0 +1,448 @@
+{
+  "products": [
+    {
+      "id": "prod-khakhra-1",
+      "name": "Handcrafted Methi Khakhra",
+      "gujaratiName": "હસ્તનિર્મિત મેથી ખાખરા",
+      "category": "khakhra",
+      "description": "Crispy, ultra-thin roasted wheat crispbread infused with fresh aromatic fenugreek (methi) leaves, ajwain, and authentic Gujarati spices. Roasted manually on earthen tawa.",
+      "ingredients": "Whole Wheat Flour, Fresh Methi, Peanut Oil, Salt, Turmeric, Cumin, Red Chili",
+      "imageUrl": "https://images.unsplash.com/photo-1601050690597-df0568f70950?auto=format&fit=crop&q=80&w=800",
+      "rating": 4.9,
+      "reviewCount": 42,
+      "isBestSeller": true,
+      "inStock": true,
+      "options": [
+        {
+          "id": "opt-k1-1",
+          "label": "1 Packet (200g)",
+          "price": 75,
+          "weightInGrams": 200
+        },
+        {
+          "id": "opt-k1-2",
+          "label": "Pack of 3 (600g)",
+          "price": 210,
+          "weightInGrams": 600
+        },
+        {
+          "id": "opt-k1-3",
+          "label": "Bulk Family Pack (1 kg)",
+          "price": 340,
+          "weightInGrams": 1000
+        }
+      ],
+      "flavors": [
+        "Classic Methi",
+        "Masala Methi",
+        "Butter Methi"
+      ],
+      "saleType": "packet"
+    },
+    {
+      "id": "prod-khakhra-2",
+      "name": "Special Masala & Jeera Khakhra",
+      "gujaratiName": "મસાલા અને જીરા ખાખરા",
+      "category": "khakhra",
+      "description": "Crispy round wheat khakhra seasoned with hand-ground roasted cumin seeds, black salt, and tangy chaat masala. Perfect tea-time healthy crunch.",
+      "ingredients": "Whole Wheat Flour, Roasted Jeera, Rock Salt, Amchur, Spices, Groundnut Oil",
+      "imageUrl": "https://images.unsplash.com/photo-1541518763669-27fef04b14ea?auto=format&fit=crop&q=80&w=800",
+      "rating": 4.8,
+      "reviewCount": 28,
+      "isBestSeller": false,
+      "inStock": true,
+      "options": [
+        {
+          "id": "opt-k2-1",
+          "label": "1 Packet (200g)",
+          "price": 80,
+          "weightInGrams": 200
+        },
+        {
+          "id": "opt-k2-2",
+          "label": "Pack of 3 (600g)",
+          "price": 225,
+          "weightInGrams": 600
+        },
+        {
+          "id": "opt-k2-3",
+          "label": "1 kg Box",
+          "price": 360,
+          "weightInGrams": 1000
+        }
+      ],
+      "flavors": [
+        "Masala Jeera",
+        "Pani Puri Special",
+        "Garlic Butter"
+      ],
+      "saleType": "packet"
+    },
+    {
+      "id": "prod-hing-1",
+      "name": "Pure Royal Bandhani Hing (Asafoetida)",
+      "gujaratiName": "શુદ્ધ રોયલ બંધાણી હિંગ",
+      "category": "hing",
+      "description": "100% Original, intense aroma Bandhani Asafoetida processed using centuries-old traditional recipes. A tiny pinch enriches Dal Fry, Kadhi, Sambhar, and Gujarati Shaak with unmatched digestive goodness.",
+      "ingredients": "Pure Asafoetida Resin (Ferula Foetida), Edible Gum, Organic Wheat Flour",
+      "imageUrl": "https://images.unsplash.com/photo-1596040033229-a9821ebd058d?auto=format&fit=crop&q=80&w=800",
+      "rating": 5,
+      "reviewCount": 89,
+      "isBestSeller": true,
+      "inStock": true,
+      "options": [
+        {
+          "id": "opt-h1-1",
+          "label": "50 Grams Jar",
+          "price": 160,
+          "weightInGrams": 50
+        },
+        {
+          "id": "opt-h1-2",
+          "label": "100 Grams Pack",
+          "price": 300,
+          "weightInGrams": 100
+        },
+        {
+          "id": "opt-h1-3",
+          "label": "250 Grams Value Box",
+          "price": 720,
+          "weightInGrams": 250
+        },
+        {
+          "id": "opt-h1-4",
+          "label": "500 Grams Catering Pack",
+          "price": 1380,
+          "weightInGrams": 500
+        }
+      ],
+      "flavors": [],
+      "saleType": "weight"
+    },
+    {
+      "id": "prod-hing-2",
+      "name": "Raw Crystal Hing Nuggets (Khada Asafoetida)",
+      "gujaratiName": "કાચુ આખું હિંગડા (ખડા હિંગ)",
+      "category": "hing",
+      "description": "Unprocessed natural gum resin lump asafoetida. Ground fresh at home or fried in ghee for traditional Ayurvedic tadka. Supreme purity guarantee.",
+      "ingredients": "100% Pure Asafoetida Gum Crystals",
+      "imageUrl": "https://images.unsplash.com/photo-1509358217951-4ff270043167?auto=format&fit=crop&q=80&w=800",
+      "rating": 4.9,
+      "reviewCount": 19,
+      "isBestSeller": false,
+      "inStock": true,
+      "options": [
+        {
+          "id": "opt-h2-1",
+          "label": "50g Pack",
+          "price": 190,
+          "weightInGrams": 50
+        },
+        {
+          "id": "opt-h2-2",
+          "label": "100g Pack",
+          "price": 360,
+          "weightInGrams": 100
+        },
+        {
+          "id": "opt-h2-3",
+          "label": "250g Pack",
+          "price": 850,
+          "weightInGrams": 250
+        }
+      ],
+      "flavors": [],
+      "saleType": "weight"
+    },
+    {
+      "id": "prod-farshan-1",
+      "name": "Surti Melt-in-Mouth Vanela Gathiya",
+      "gujaratiName": "સુરતી નરમ વણેલા ગંઠિયા",
+      "category": "farshan",
+      "description": "Hand-rolled traditional gram flour (besan) Gathiya infused with carom seeds (ajwain) and hing tadka. Extremely soft, airy texture, fried in fresh groundnut oil.",
+      "ingredients": "Pure Chana Dal Besan, Groundnut Oil, Ajwain, Black Pepper, Hing, Soda, Salt",
+      "imageUrl": "https://images.unsplash.com/photo-1626777552726-4a6b54c97e46?auto=format&fit=crop&q=80&w=800",
+      "rating": 4.9,
+      "reviewCount": 64,
+      "isBestSeller": true,
+      "inStock": true,
+      "options": [
+        {
+          "id": "opt-f1-1",
+          "label": "250g Pack",
+          "price": 110,
+          "weightInGrams": 250
+        },
+        {
+          "id": "opt-f1-2",
+          "label": "500g Pack",
+          "price": 210,
+          "weightInGrams": 500
+        },
+        {
+          "id": "opt-f1-3",
+          "label": "1 kg Family Pack",
+          "price": 400,
+          "weightInGrams": 1000
+        }
+      ],
+      "flavors": [
+        "Classic Surti Soft",
+        "Spicy Black Pepper (Tikha)"
+      ],
+      "saleType": "weight"
+    },
+    {
+      "id": "prod-farshan-2",
+      "name": "Spicy Ratlami & Tikha Lasaniya Sev",
+      "gujaratiName": "રતલામી અને સ્પાઇસી લસણીયા સેવ",
+      "category": "farshan",
+      "description": "Crisp spicy besan noodles heavily flavored with clove, garlic, red chili, and whole black pepper. The ultimate companion for Sev Tameta Shaak, Sev Puri, or direct munching.",
+      "ingredients": "Gram Flour (Besan), Garlic, Red Chili Powder, Clove, Black Pepper, Asafoetida",
+      "imageUrl": "https://images.unsplash.com/photo-1589301760014-d929f3979dbc?auto=format&fit=crop&q=80&w=800",
+      "rating": 4.7,
+      "reviewCount": 31,
+      "isBestSeller": false,
+      "inStock": true,
+      "options": [
+        {
+          "id": "opt-f2-1",
+          "label": "250g Pack",
+          "price": 100,
+          "weightInGrams": 250
+        },
+        {
+          "id": "opt-f2-2",
+          "label": "500g Pack",
+          "price": 195,
+          "weightInGrams": 500
+        },
+        {
+          "id": "opt-f2-3",
+          "label": "1 kg Pack",
+          "price": 380,
+          "weightInGrams": 1000
+        }
+      ],
+      "flavors": [
+        "Ratlami Laung Sev",
+        "Garlic Lasan Sev",
+        "Fine Nylon Sev"
+      ],
+      "saleType": "weight"
+    },
+    {
+      "id": "prod-farshan-3",
+      "name": "Kathiyawadi Special Mix Chavanu (Farsan)",
+      "gujaratiName": "કાઠિયાવાડી પંચરત્ન ચવાણું",
+      "category": "farshan",
+      "description": "Savoury mixture of roasted flattened rice (poha), crispy sev, fried sweet neem leaves, peanuts, cashews, raisins, and aromatic sweet-tangy spices.",
+      "ingredients": "Gram Flour, Poha, Peanuts, Cashew, Raisins, Sesame Seeds, Curry Leaves, Spices",
+      "imageUrl": "https://images.unsplash.com/photo-1601050690597-df0568f70950?auto=format&fit=crop&q=80&w=800",
+      "rating": 4.8,
+      "reviewCount": 52,
+      "isBestSeller": true,
+      "inStock": true,
+      "options": [
+        {
+          "id": "opt-f3-1",
+          "label": "250g Pack",
+          "price": 120,
+          "weightInGrams": 250
+        },
+        {
+          "id": "opt-f3-2",
+          "label": "500g Pack",
+          "price": 230,
+          "weightInGrams": 500
+        },
+        {
+          "id": "opt-f3-3",
+          "label": "1 kg Box",
+          "price": 440,
+          "weightInGrams": 1000
+        }
+      ],
+      "flavors": [],
+      "saleType": "weight"
+    },
+    {
+      "id": "prod-combo-1",
+      "name": "Gujarati Heritage Festival Feast Hamper",
+      "gujaratiName": "ગુજરાતી હેરીટેજ ફાસ્ટ એન્ડ ફેસ્ટિવલ પેક",
+      "category": "combos",
+      "description": "A delight box containing 500g Vanela Gathiya, 500g Methi Khakhra (2 packets), 250g Special Mix Chavanu, and 50g Royal Bandhani Hing jar.",
+      "ingredients": "Combination of fresh Gathiya, Khakhra, Chavanu, and Pure Hing",
+      "imageUrl": "https://images.unsplash.com/photo-1546833999-b9f581a1996d?auto=format&fit=crop&q=80&w=800",
+      "rating": 5,
+      "reviewCount": 73,
+      "isBestSeller": true,
+      "inStock": true,
+      "options": [
+        {
+          "id": "opt-c1-1",
+          "label": "1 Gift Combo Box (1.4 kg total)",
+          "price": 599,
+          "weightInGrams": 1400
+        },
+        {
+          "id": "opt-c1-2",
+          "label": "Twin Royal Combo Boxes (2.8 kg)",
+          "price": 1120,
+          "weightInGrams": 2800
+        }
+      ],
+      "flavors": [],
+      "saleType": "packet"
+    }
+  ],
+  "orders": [
+    {
+      "id": "GRJ-8856",
+      "customerName": "Kantilal",
+      "phone": "8888888888",
+      "address": "Saradhablali boys hoste,patia, koel cmapus, right street to true value",
+      "city": "Ahmedabad",
+      "pincode": "751016",
+      "email": null,
+      "items": [
+        {
+          "flavor": "Masala Jeera",
+          "quantity": 1,
+          "productId": "prod-khakhra-2",
+          "unitPrice": 80,
+          "totalPrice": 80,
+          "optionLabel": "1 Packet (200g)",
+          "productName": "Special Masala & Jeera Khakhra"
+        }
+      ],
+      "subtotal": 80,
+      "deliveryFee": 40,
+      "totalAmount": 120,
+      "status": "dispatched",
+      "adminNotes": null,
+      "notes": null,
+      "createdAt": "2026-07-31T08:08:09.96+00:00"
+    },
+    {
+      "id": "GRJ-5971",
+      "customerName": "biipib rathor",
+      "phone": "7008437665",
+      "address": "ithwiehtge",
+      "city": "Ahmedabad",
+      "pincode": "erjht",
+      "email": null,
+      "items": [
+        {
+          "quantity": 2,
+          "productId": "prod-hing-1",
+          "unitPrice": 160,
+          "totalPrice": 320,
+          "optionLabel": "50 Grams Jar",
+          "productName": "Pure Royal Bandhani Hing (Asafoetida)"
+        },
+        {
+          "quantity": 1,
+          "productId": "prod-hing-2",
+          "unitPrice": 190,
+          "totalPrice": 190,
+          "optionLabel": "50g Pack",
+          "productName": "Raw Crystal Hing Nuggets (Khada Asafoetida)"
+        }
+      ],
+      "subtotal": 510,
+      "deliveryFee": 0,
+      "totalAmount": 510,
+      "status": "dispatched",
+      "adminNotes": null,
+      "notes": "erwhthu",
+      "createdAt": "2026-08-15T08:29:59.497+00:00"
+    },
+    {
+      "id": "GRJ-2628",
+      "customerName": "hareshbhai patel",
+      "phone": "7978111612",
+      "address": "Baikunt vihar\nBackside mahawar bhawan",
+      "city": "Ahmedabad",
+      "pincode": "756100",
+      "email": "rathorgitanshbdk@gmail.com",
+      "items": [
+        {
+          "quantity": 1,
+          "productId": "prod-hing-1",
+          "unitPrice": 160,
+          "totalPrice": 160,
+          "optionLabel": "50 Grams Jar",
+          "productName": "Pure Royal Bandhani Hing (Asafoetida)"
+        }
+      ],
+      "subtotal": 160,
+      "deliveryFee": 40,
+      "totalAmount": 200,
+      "status": "dispatched",
+      "adminNotes": null,
+      "notes": null,
+      "createdAt": "2026-10-09T08:39:01.095+00:00"
+    }
+  ],
+  "reviews": [
+    {
+      "id": "rev-1",
+      "productId": "prod-hing-1",
+      "productName": "Pure Royal Bandhani Hing",
+      "customerName": "Kiritbhai Patel (Ahmadabad)",
+      "rating": 5,
+      "comment": "આ હિંગ સાચે જ અદ્ભુત છે! Very strong aroma. Just a tiny pinch makes my Dal Fry and Kadhi taste like home recipe. Packaging is airtight and clean.",
+      "date": "2026-07-20",
+      "isVerifiedPurchase": true
+    },
+    {
+      "id": "rev-2",
+      "productId": "prod-khakhra-1",
+      "productName": "Handcrafted Methi Khakhra",
+      "customerName": "Meghna Shah (Mumbai)",
+      "rating": 5,
+      "comment": "Super crisp, non-oily and authentic. We ordered 1kg for morning tea and everybody in my house loved it! Will reorder soon.",
+      "date": "2026-07-22",
+      "isVerifiedPurchase": true
+    },
+    {
+      "id": "rev-3",
+      "productId": "prod-farshan-1",
+      "productName": "Surti Melt-in-Mouth Vanela Gathiya",
+      "customerName": "Jignesh Merchant (Surat)",
+      "rating": 5,
+      "comment": "Authentic Surti taste! Gathiya were so fresh and soft. Delivered intact without breaking.",
+      "date": "2026-07-25",
+      "isVerifiedPurchase": true
+    },
+    {
+      "id": "rev-4",
+      "productId": "prod-combo-1",
+      "productName": "Gujarati Heritage Festival Feast Hamper",
+      "customerName": "Priya Dave (Vadodara)",
+      "rating": 5,
+      "comment": "Gifted this hamper to my relatives in Delhi for festival. They praised the Hing quality and the crunchiness of Khakhra!",
+      "date": "2026-07-28",
+      "isVerifiedPurchase": true
+    }
+  ],
+  "bulkInquiries": [
+    {
+      "id": "BULK-101",
+      "name": "Ramesh Patel",
+      "phone": "9898011223",
+      "email": "ramesh.events@example.com",
+      "businessOrEvent": "Navratri Garba Festival Catering",
+      "eventDate": "2026-10-15",
+      "expectedQuantity": "50 kg Gathiya + 100 Packets Khakhra",
+      "productsInterested": [
+        "Surti Vanela Gathiya",
+        "Handcrafted Methi Khakhra"
+      ],
+      "message": "Need vacuum packed boxes for guest gifts during Garba night.",
+      "status": "new",
+      "createdAt": "2026-10-08T12:35:38.520Z"
+    }
+  ]
+}

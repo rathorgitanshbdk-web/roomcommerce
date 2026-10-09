@@ -11,6 +11,27 @@ export default defineConfig(() => {
         '@': path.resolve(__dirname, '.'),
       },
     },
+    define: {
+      'process.env.SUPABASE_URL': JSON.stringify(
+        process.env.SUPABASE_URL || 'https://jjwhouebcwwajrkjhvfk.supabase.co'
+      ),
+      'process.env.SUPABASE_KEY': JSON.stringify(
+        process.env.SUPABASE_KEY ||
+          process.env.SUPABASE_ANON_KEY ||
+          'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impqd2hvdWViY3d3YWpya2podmZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUzOTEwMzgsImV4cCI6MjEwMDk2NzAzOH0.uQq-7H_v7YWdr8sEOy6o6pjAFfXrwZmHdbZUk0fmjRE'
+      ),
+      'process.env.VITE_SUPABASE_URL': JSON.stringify(
+        process.env.VITE_SUPABASE_URL ||
+          process.env.SUPABASE_URL ||
+          'https://jjwhouebcwwajrkjhvfk.supabase.co'
+      ),
+      'process.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(
+        process.env.VITE_SUPABASE_ANON_KEY ||
+          process.env.SUPABASE_KEY ||
+          process.env.SUPABASE_ANON_KEY ||
+          'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impqd2hvdWViY3d3YWpya2podmZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUzOTEwMzgsImV4cCI6MjEwMDk2NzAzOH0.uQq-7H_v7YWdr8sEOy6o6pjAFfXrwZmHdbZUk0fmjRE'
+      ),
+    },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modifyâfile watching is disabled to prevent flickering during agent edits.

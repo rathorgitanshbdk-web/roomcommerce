@@ -1,9 +1,9 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
-import { INITIAL_PRODUCTS, INITIAL_REVIEWS } from './src/data/initialData.js';
-import { Product, Order, Review, BulkInquiry } from './src/types.js';
-import { getSupabase, setCustomSupabaseCredentials, getSupabaseCredentials, SUPABASE_SQL_SCHEMA } from './src/lib/supabase.js';
+import { INITIAL_PRODUCTS, INITIAL_REVIEWS } from './src/data/initialData';
+import { Product, Order, Review, BulkInquiry } from './src/types';
+import { getSupabase, setCustomSupabaseCredentials, getSupabaseCredentials, SUPABASE_SQL_SCHEMA } from './src/lib/supabase';
 
 const app = express();
 const PORT = 3000;
@@ -180,6 +180,11 @@ async function syncFromSupabase() {
         flavors: safeJsonParse(p.flavors, []),
         saleType: p.sale_type || 'weight'
       }));
+    } else if (!pRes.error && pRes.data && pRes.data.length === 0) {
+      // Auto-seed Supabase with default initial products
+      for (const p of INITIAL_PRODUCTS) {
+        await saveProductToSupabase(p);
+      }
     }
 
     if (!oRes.error && oRes.data) {
@@ -386,7 +391,11 @@ function loadStore() {
 }
 
 loadStore();
-syncFromSupabase();
+if (getSupabase()) {
+  syncFromSupabase().catch((err) => {
+    console.error('Initial Supabase sync error:', err);
+  });
+}
 
 // ================= API ROUTES =================
 const apiRouter = express.Router();

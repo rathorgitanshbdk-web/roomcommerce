@@ -1,11 +1,11 @@
 import React from 'react';
-import { ShieldCheck, Phone, MapPin, Mail, LayoutDashboard, Clock } from 'lucide-react';
+import { ShieldCheck, Phone, MapPin, Mail, Clock } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 
 interface FooterProps {
   onOpenTrackOrder: () => void;
   onOpenBulkOrder: () => void;
-  onToggleAdmin: (view: 'shop' | 'admin') => void;
+  onToggleAdmin?: (view: 'shop' | 'admin') => void;
 }
 
 export const Footer: React.FC<FooterProps> = ({
@@ -103,13 +103,6 @@ export const Footer: React.FC<FooterProps> = ({
 
       <div className="border-t border-[#78350F] bg-[#321302] py-3 text-center text-[10px] text-[#FDE68A]/80 flex items-center justify-center gap-2">
         <span>© 2026 Giriraj Farshan & Bandhani Hing Store. All rights reserved. • આભાર - આવજો!</span>
-        <button
-          onClick={() => onToggleAdmin('admin')}
-          className="text-[#FEF3C7]/20 hover:text-[#FEF3C7]/60 transition-colors text-[9px] font-mono ml-2 opacity-30 hover:opacity-100"
-          title="Admin Login"
-        >
-          🔒 Admin
-        </button>
       </div>
     </footer>
   );

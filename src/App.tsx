@@ -13,6 +13,7 @@ import { ReviewsSection } from './components/ReviewsSection';
 import { Footer } from './components/Footer';
 import { AdminDashboard } from './admin/AdminDashboard';
 import { fetchProducts } from './services/api';
+import { INITIAL_PRODUCTS } from './data/initialData';
 import { ShoppingBag } from 'lucide-react';
 import { useLanguage } from './context/LanguageContext';
 
@@ -20,30 +21,39 @@ export default function App() {
   const { t } = useLanguage();
 
   // Navigation / View State ('shop' or 'admin')
-
   const [currentView, setCurrentView] = useState<'shop' | 'admin'>(() => {
-    return window.location.hash === '#admin' ? 'admin' : 'shop';
+    const path = window.location.pathname.toLowerCase();
+    const hash = window.location.hash.toLowerCase();
+    return path.startsWith('/admin') || hash === '#admin' ? 'admin' : 'shop';
   });
 
-  // Listen to hash changes in window location for URL differentiation (/ #admin)
+  // Listen to URL path & hash changes for direct /admin access
   useEffect(() => {
-    const handleHashChange = () => {
-      if (window.location.hash === '#admin') {
+    const handleLocationChange = () => {
+      const path = window.location.pathname.toLowerCase();
+      const hash = window.location.hash.toLowerCase();
+      if (path.startsWith('/admin') || hash === '#admin') {
         setCurrentView('admin');
       } else {
         setCurrentView('shop');
       }
     };
-    window.addEventListener('hashchange', handleHashChange);
-    return () => window.removeEventListener('hashchange', handleHashChange);
+
+    handleLocationChange();
+    window.addEventListener('hashchange', handleLocationChange);
+    window.addEventListener('popstate', handleLocationChange);
+    return () => {
+      window.removeEventListener('hashchange', handleLocationChange);
+      window.removeEventListener('popstate', handleLocationChange);
+    };
   }, []);
 
   const handleToggleAdminView = (view: 'shop' | 'admin') => {
     setCurrentView(view);
     if (view === 'admin') {
-      window.location.hash = '#admin';
+      window.history.pushState({}, '', '/admin');
     } else {
-      window.location.hash = '';
+      window.history.pushState({}, '', '/');
     }
   };
 
@@ -78,14 +88,15 @@ export default function App() {
   const [isTrackOrderOpen, setIsTrackOrderOpen] = useState<boolean>(false);
   const [placedOrderForModal, setPlacedOrderForModal] = useState<Order | null>(null);
 
-  // Load products from API
+  // Load products from API / Supabase
   const loadProducts = async () => {
     setLoadingProducts(true);
     try {
       const list = await fetchProducts(activeCategory, searchQuery);
-      setProducts(list);
+      setProducts(list && list.length > 0 ? list : INITIAL_PRODUCTS);
     } catch (err) {
       console.error('Error fetching products:', err);
+      setProducts(INITIAL_PRODUCTS);
     } finally {
       setLoadingProducts(false);
     }

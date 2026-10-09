@@ -36,7 +36,7 @@ import {
 } from '../services/api';
 import { AddProductModal } from './AddProductModal';
 
-import { SUPABASE_SQL_SCHEMA } from '../lib/supabase';
+import { SUPABASE_SQL_SCHEMA, getSupabase, getSupabaseCredentials, setCustomSupabaseCredentials } from '../lib/supabase';
 
 interface AdminDashboardProps {
   onBackToShop: () => void;
@@ -107,9 +107,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
       setProducts(productsRes);
       setBulkInquiries(bulkRes);
 
+      let supabaseDetected = false;
       try {
         const supRes = await fetch('/api/supabase/status');
-        if (supRes.ok) {
+        const contentType = supRes.headers.get('content-type') || '';
+        if (supRes.ok && contentType.includes('application/json')) {
           const supData = await supRes.json();
           setSupabaseInfo({
             configured: Boolean(supData.configured),
@@ -118,9 +120,35 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
             pingError: supData.pingError,
             sqlSchema: supData.sqlSchema || SUPABASE_SQL_SCHEMA
           });
+          supabaseDetected = true;
         }
       } catch (e) {
-        console.error('Failed to load Supabase status:', e);
+        // Fallback to client-side test
+      }
+
+      if (!supabaseDetected) {
+        const client = getSupabase();
+        const creds = getSupabaseCredentials();
+        if (client) {
+          try {
+            const { error } = await client.from('products').select('id').limit(1);
+            setSupabaseInfo({
+              configured: true,
+              supabaseUrl: creds?.url || null,
+              pingSuccess: !error,
+              pingError: error ? error.message : null,
+              sqlSchema: SUPABASE_SQL_SCHEMA
+            });
+          } catch (e: any) {
+            setSupabaseInfo({
+              configured: true,
+              supabaseUrl: creds?.url || null,
+              pingSuccess: false,
+              pingError: e?.message || 'Connection ping failed',
+              sqlSchema: SUPABASE_SQL_SCHEMA
+            });
+          }
+        }
       }
     } catch (err) {
       console.error('Error loading admin data:', err);
@@ -139,36 +167,57 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
     setConnectLoading(true);
     setConnectMsg(null);
 
+    let cleanUrl = String(manualUrl).trim().replace(/^["']|["']$/g, '');
+    const cleanKey = String(manualKey).trim().replace(/^["']|["']$/g, '');
+    if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+      cleanUrl = `https://${cleanUrl}`;
+    }
+
+    // Set client-side credentials & localStorage
+    setCustomSupabaseCredentials(cleanUrl, cleanKey);
+
+    // Also attempt server sync if available
     try {
-      const res = await fetch('/api/supabase/connect', {
+      await fetch('/api/supabase/connect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ supabaseUrl: manualUrl, supabaseKey: manualKey }),
+        body: JSON.stringify({ supabaseUrl: cleanUrl, supabaseKey: cleanKey }),
       });
+    } catch {
+      // API endpoint not reachable in static mode, will test via client
+    }
 
-      const text = await res.text();
-      let data: any = {};
-      try {
-        data = JSON.parse(text);
-      } catch (e) {
-        data = { error: `Server error (${res.status}): ${text.replace(/<[^>]*>?/gm, '').slice(0, 180)}` };
-      }
-
-      if (res.ok && data.success) {
-        setConnectMsg({
-          type: data.pingSuccess ? 'success' : 'error',
-          text: data.message
-        });
-        setSupabaseInfo({
-          configured: Boolean(data.configured),
-          supabaseUrl: data.supabaseUrl,
-          pingSuccess: data.pingSuccess,
-          pingError: data.pingError,
-          sqlSchema: SUPABASE_SQL_SCHEMA
-        });
-        loadAllData();
-      } else {
-        setConnectMsg({ type: 'error', text: data.error || 'Failed to connect to Supabase.' });
+    // Test connection via client
+    try {
+      const client = getSupabase();
+      if (client) {
+        const { error } = await client.from('products').select('id').limit(1);
+        if (error) {
+          setConnectMsg({
+            type: 'error',
+            text: `Connected to Supabase, but test query returned: ${error.message}. Make sure SQL schema is executed in Supabase SQL editor.`
+          });
+          setSupabaseInfo({
+            configured: true,
+            supabaseUrl: cleanUrl,
+            pingSuccess: false,
+            pingError: error.message,
+            sqlSchema: SUPABASE_SQL_SCHEMA
+          });
+        } else {
+          setConnectMsg({
+            type: 'success',
+            text: 'Successfully connected and verified Supabase database!'
+          });
+          setSupabaseInfo({
+            configured: true,
+            supabaseUrl: cleanUrl,
+            pingSuccess: true,
+            pingError: null,
+            sqlSchema: SUPABASE_SQL_SCHEMA
+          });
+          loadAllData();
+        }
       }
     } catch (err: any) {
       setConnectMsg({ type: 'error', text: err.message || 'Connection request failed' });
