@@ -82,7 +82,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onExploreClick, onBulk
           <div className="relative mx-auto max-w-sm lg:max-w-none rounded-[32px] p-1.5 bg-gradient-to-b from-[#F59E0B]/30 to-[#78350F]/20 backdrop-blur-md shadow-2xl border border-[#EED4A8]/30">
             <div className="relative rounded-[28px] overflow-hidden aspect-[4/3] bg-[#451A03]">
               <img
-                src="https://m.media-amazon.com/images/I/91-pr1B97HL.jpg"
+                src="https://i.ibb.co/TBVGvhvS/1617f944-a5de-471a-a6db-316e872170cd.jpg"
                 alt="Gujarati Farshan & Khakhra"
                 className="w-full h-full object-cover object-center opacity-90 hover:scale-105 transition-transform duration-700"
               />
