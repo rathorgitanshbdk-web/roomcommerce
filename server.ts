@@ -1,12 +1,12 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
-import { INITIAL_PRODUCTS, INITIAL_REVIEWS } from './src/data/initialData';
-import { Product, Order, Review, BulkInquiry } from './src/types';
-import { getSupabase, setCustomSupabaseCredentials, getSupabaseCredentials, SUPABASE_SQL_SCHEMA } from './src/lib/supabase';
+import { INITIAL_PRODUCTS, INITIAL_REVIEWS } from './src/data/initialData.ts';
+import type { Product, Order, Review, BulkInquiry } from './src/types.ts';
+import { getSupabase, setCustomSupabaseCredentials, getSupabaseCredentials, SUPABASE_SQL_SCHEMA } from './src/lib/supabase.ts';
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -834,21 +834,23 @@ app.use('/', apiRouter);
 
 // ================= VITE / STATIC MIDDLEWARE =================
 async function startServer() {
-  if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+  const distPath = path.join(process.cwd(), 'dist');
+  const hasDist = fs.existsSync(path.join(distPath, 'index.html'));
+
+  if (hasDist || process.env.NODE_ENV === 'production') {
+    if (fs.existsSync(distPath)) {
+      app.use(express.static(distPath));
+      app.get('*', (_req, res) => {
+        res.sendFile(path.join(distPath, 'index.html'));
+      });
+    }
+  } else if (!process.env.VERCEL) {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa'
     });
     app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    if (fs.existsSync(distPath)) {
-      app.use(express.static(distPath));
-      app.get('*', (req, res) => {
-        res.sendFile(path.join(distPath, 'index.html'));
-      });
-    }
   }
 
   app.listen(PORT, '0.0.0.0', () => {

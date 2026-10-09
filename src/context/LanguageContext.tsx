@@ -35,6 +35,7 @@ export interface Translations {
   royalResin: string;
   storeDirect: string;
   ownerConfirmation: string;
+  pickupandhomedelivery: string;
   buyFreshBtn: string;
   bulkInquiryBtn: string;
   specialAttraction: string;
@@ -125,6 +126,7 @@ const translations: Record<Language, Translations> = {
     royalResin: "Royal Bandhani resin",
     storeDirect: "Store Direct",
     ownerConfirmation: "Owner confirmation",
+    pickupandhomedelivery: "Store Pickup & Home Delivery",
     buyFreshBtn: "Buy Fresh Farshan & Hing",
     bulkInquiryBtn: "Bulk & Wholesale Orders",
     specialAttraction: "Special Attraction",
@@ -208,6 +210,7 @@ const translations: Record<Language, Translations> = {
     royalResin: "રાયલ બાંધણી હીંગ",
     storeDirect: "સ્ટોર ડાયરેક્ટ",
     ownerConfirmation: "માલિક કન્ફર્મેશન",
+    pickupandhomedelivery: "સ્ટોર પિકઅપ અને હોમ ડિલિવરી",
     buyFreshBtn: "તાજી વાનગીઓ ખરીદો",
     bulkInquiryBtn: "જથ્થાબંધ ઓર્ડર પૂછપરછ",
     specialAttraction: "ખાસ આકર્ષણ",
@@ -291,6 +294,7 @@ const translations: Record<Language, Translations> = {
     royalResin: "रॉयल बांधणी हींग",
     storeDirect: "स्टोर डायरेक्ट",
     ownerConfirmation: "स्टोर मालिक द्वारा पुष्टि",
+    pickupandhomedelivery: "स्टोर पिकअप और होम डिलीवरी",
     buyFreshBtn: "ताज़ा फरसाण व हींग खरीदें",
     bulkInquiryBtn: "थोक व शादी के ऑर्डर",
     specialAttraction: "विशेष आकर्षण",

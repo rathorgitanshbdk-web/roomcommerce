@@ -1,4 +1,4 @@
-import { Product, Review } from '../types';
+import type { Product, Review } from '../types.ts';
 
 export const INITIAL_PRODUCTS: Product[] = [
   {
