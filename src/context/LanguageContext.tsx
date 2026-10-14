@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState } from 'react';
 
 export type Language = 'en' | 'gu' | 'hi';
 
@@ -8,15 +8,18 @@ export interface Translations {
   freeShipping: string;
   swaadTagline: string;
   trackOrderStatus: string;
+  trackOrderBtn: string;
   adminPanel: string;
   backToStorefront: string;
   searchPlaceholder: string;
   bulkOrderBtn: string;
+  bulkOrdersNav: string;
   cartBtn: string;
   emptyCart: string;
   itemsInCart: string;
   authenticBadge: string;
   brandTagline: string;
+  tagline: string;
 
   // Categories
   catAll: string;
@@ -55,6 +58,8 @@ export interface Translations {
   ingredientsLabel: string;
   customerReviews: string;
   flavorLabel: string;
+  writeReview: string;
+  submitReviewBtn: string;
 
   // Cart & Checkout
   cartTitle: string;
@@ -64,13 +69,20 @@ export interface Translations {
   customerDetails: string;
   fullName: string;
   mobileNumber: string;
+  phone: string;
+  emailOptional: string;
   address: string;
+  fullAddress: string;
   city: string;
   pincode: string;
   confirmOrderBtn: string;
+  placeOrderBtn: string;
   placingOrder: string;
 
-  // Order Status Modal
+  // Order Status & Tracking Modals
+  orderId: string;
+  unconfirmedStatus: string;
+  confirmedStatus: string;
   awaitingConfirmation: string;
   awaitingDesc: string;
   checkStatusBtn: string;
@@ -80,6 +92,7 @@ export interface Translations {
 
   // Bulk Order Section
   bulkSectionTag: string;
+  bulkInquiryTitle: string;
   bulkSectionTitle: string;
   bulkSectionDesc: string;
   requestQuoteTitle: string;
@@ -101,15 +114,18 @@ const translations: Record<Language, Translations> = {
     freeShipping: "Free Shipping Above ₹499",
     swaadTagline: "Authentic Gujarati Taste • Quality Assured",
     trackOrderStatus: "Track Order Status",
+    trackOrderBtn: "Track Order Status",
     adminPanel: "Admin Panel",
     backToStorefront: "← Back to Storefront",
     searchPlaceholder: "Search Khakhra, Bandhani Hing, Gathiya, Sev...",
     bulkOrderBtn: "Bulk Orders",
+    bulkOrdersNav: "Bulk & Wholesale Orders",
     cartBtn: "Cart",
     emptyCart: "Empty",
     itemsInCart: "items",
     authenticBadge: "100% Authentic",
     brandTagline: "Crispy, Sweet & Spicy Snacks & Pure Hing",
+    tagline: "Authentic Gujarati Farshan & Pure Hing",
 
     catAll: "All Items",
     catKhakhra: "Khakhra",
@@ -135,30 +151,39 @@ const translations: Record<Language, Translations> = {
 
     showingItems: "Showing authentic Gujarati delicacies",
     selectWeightTitle: "Select Weight & Flavors to Buy Fresh",
-    noMatchTitle: "No items match your search",
-    noMatchDesc: "Try searching for 'Khakhra', 'Bandhani Hing', 'Gathiya' or clear filter settings.",
-    resetFilters: "Reset Filters",
+    noMatchTitle: "No items match your selection",
+    noMatchDesc: "There are currently no products in this category or search filter.",
+    resetFilters: "Show All Items",
     addToCart: "Add to Cart",
     addedToCart: "Added",
     viewDetails: "View Details",
     chooseWeight: "Choose Weight / Pack:",
-    ingredientsLabel: "Ingredients:",
+    ingredientsLabel: "Ingredients",
     customerReviews: "Customer Reviews",
     flavorLabel: "Flavor:",
+    writeReview: "Write a Customer Review",
+    submitReviewBtn: "Publish Review",
 
     cartTitle: "Your Shopping Cart",
     totalPayable: "Total Payable Amount",
     proceedToCheckout: "Proceed to Checkout",
     checkoutTitle: "Checkout & Delivery Address",
     customerDetails: "Customer & Shipping Details",
-    fullName: "Your Full Name *",
-    mobileNumber: "Mobile Phone Number *",
-    address: "Delivery Street Address *",
-    city: "City / Town *",
-    pincode: "PIN Code *",
+    fullName: "Your Full Name",
+    mobileNumber: "Mobile Phone Number",
+    phone: "Mobile Phone Number",
+    emailOptional: "Email Address (Optional)",
+    address: "Delivery Street Address",
+    fullAddress: "Full Delivery Address",
+    city: "City / Town",
+    pincode: "PIN Code",
     confirmOrderBtn: "Confirm & Submit Order",
+    placeOrderBtn: "Confirm & Place Order",
     placingOrder: "Submitting Order...",
 
+    orderId: "Order ID",
+    unconfirmedStatus: "Pending Owner Confirmation",
+    confirmedStatus: "Order Confirmed by Owner",
     awaitingConfirmation: "Awaiting Store Confirmation:",
     awaitingDesc: "Your order is safely registered in our system! The owner of Giriraj Farshan will review item stock and click 'Confirm Order'. No online payment is required right now.",
     checkStatusBtn: "Check Owner Confirmation Status",
@@ -167,6 +192,7 @@ const translations: Record<Language, Translations> = {
     findOrderBtn: "Find Order",
 
     bulkSectionTag: "Bulk Orders & Wedding Catering",
+    bulkInquiryTitle: "Bulk & Wholesale Inquiry",
     bulkSectionTitle: "Weddings, Navratri Festival & Corporate Bulk Orders",
     bulkSectionDesc: "We offer discounted wholesale prices, custom vacuum packaging, and fresh batch preparation across India.",
     requestQuoteTitle: "Request Wholesale Quote",
@@ -185,15 +211,18 @@ const translations: Record<Language, Translations> = {
     freeShipping: "₹૪૯૯ ઉપર ફ્રી શિપિંગ",
     swaadTagline: "અસલી ગુર્જર સ્વાદ • શુદ્ધતાની ખાતરી",
     trackOrderStatus: "ઓર્ડર સ્ટેટસ ટ્રેક કરો",
+    trackOrderBtn: "ઓર્ડર સ્ટેટસ ટ્રેક કરો",
     adminPanel: "એડમિન પેનલ",
     backToStorefront: "← સ્ટોર પર પાછા જાઓ",
     searchPlaceholder: "શોધો ખાખરા, બાંધણી હીંગ, ગાંઠિયા, સેવ...",
     bulkOrderBtn: "જથ્થાબંધ ઓર્ડર",
+    bulkOrdersNav: "જથ્થાબંધ અને હોલસેલ ઓર્ડર",
     cartBtn: "કાર્ટ",
     emptyCart: "ખાલી",
     itemsInCart: "આઇટમ્સ",
     authenticBadge: "૧૦૦% અસલી",
     brandTagline: "ખારા, ગળ્યા ને ચટપટા ફરસાણ & શુદ્ધ હિંગ",
+    tagline: "અસલી ગુજરાતી ફરસાણ અને શુદ્ધ હીંગ",
 
     catAll: "બધી વાનગીઓ",
     catKhakhra: "ખાખરા",
@@ -219,30 +248,39 @@ const translations: Record<Language, Translations> = {
 
     showingItems: "અસલી ગુજરાતી ફરસાણ વાનગીઓ",
     selectWeightTitle: "તાજી વાનગીઓ ખરીદવા વજન અને સ્વાદ પસંદ કરો",
-    noMatchTitle: "કોઈ વાનગી મળી નથી",
-    noMatchDesc: "'ખાખરા', 'બાંધણી હીંગ' અથવા 'ગાંઠિયા' શોધી જુઓ.",
-    resetFilters: "ફિલ્ટર રીસેટ કરો",
+    noMatchTitle: "આ કેટેગરીમાં હાલ કોઈ વાનગી નથી",
+    noMatchDesc: "તમાધી પસંદ કરેલ કેટેગરી અથવા સર્ચ મુજબ કોઈ પ્રોડક્ટ ઉપલબ્ધ નથી.",
+    resetFilters: "બધી વાનગીઓ જુઓ",
     addToCart: "કાર્ટમાં ઉમેરો",
     addedToCart: "ઉમેરાઈ ગયું",
     viewDetails: "વિગત જુઓ",
     chooseWeight: "વજન / પેક પસંદ કરો:",
-    ingredientsLabel: "વાનગીના ઘટકો:",
+    ingredientsLabel: "વાનગીના ઘટકો",
     customerReviews: "ગ્રાહકોના અભિપ્રાય",
     flavorLabel: "સ્વાદ (ફ્લેવર):",
+    writeReview: "તમારો અભિપ્રાય લખો",
+    submitReviewBtn: "અભિપ્રાય મોકલો",
 
     cartTitle: "તમારું શોપિંગ કાર્ટ",
     totalPayable: "કુલ ચૂકવવાપાત્ર રકમ",
     proceedToCheckout: "ચેકઆઉટ કરો",
     checkoutTitle: "ચેકઆઉટ અને ડિલિવરી સરનામું",
     customerDetails: "ગ્રાહક અને સરનામા વિગત",
-    fullName: "તમારું પૂરું નામ *",
-    mobileNumber: "મોબાઈલ નંબર *",
-    address: "ડિલિવરી સરનામું *",
-    city: "શહેર *",
-    pincode: "પિનકોડ *",
+    fullName: "તમારું પૂરું નામ",
+    mobileNumber: "મોબાઈલ નંબર",
+    phone: "મોબાઈલ નંબર",
+    emailOptional: "ઈમેલ એડ્રેસ (વૈકલ્પિક)",
+    address: "ડિલિવરી સરનામું",
+    fullAddress: "પૂરું ડિલિવરી સરનામું",
+    city: "શહેર",
+    pincode: "પિનકોડ",
     confirmOrderBtn: "ઓર્ડર કન્ફર્મ કરો",
+    placeOrderBtn: "ઓર્ડર કન્ફર્મ કરો",
     placingOrder: "ઓર્ડર મોકલાઈ રહ્યો છે...",
 
+    orderId: "ઓર્ડર આઈડી",
+    unconfirmedStatus: "માલિક કન્ફર્મેશન બાકી છે",
+    confirmedStatus: "માલિક દ્વારા ઓર્ડર કન્ફર્મ",
     awaitingConfirmation: "દુકાનદાર કન્ફર્મેશન બાકી:",
     awaitingDesc: "તમારો ઓર્ડર રજિસ્ટર થઈ ગયો છે! ગિરીરાજ ફરસાણના માલિક સ્ટોક ચકાસીને 'ઓર્ડર કન્ફર્મ' કરશે. અત્યારે કોઈ ઓનલાઇન પેમેન્ટ કરવાની જરૂર નથી.",
     checkStatusBtn: "કન્ફર્મેશન સ્ટેટસ ચકાસો",
@@ -251,6 +289,7 @@ const translations: Record<Language, Translations> = {
     findOrderBtn: "ઓર્ડર શોધો",
 
     bulkSectionTag: "જથ્થાબંધ ઓર્ડર & લગ્ન પ્રસંગ કેટરિંગ",
+    bulkInquiryTitle: "જથ્થાબંધ ઓર્ડર પૂછપરછ",
     bulkSectionTitle: "લગ્ન પ્રસંગ, નવરાત્રિ અને જથ્થાબંધ ઓર્ડર",
     bulkSectionDesc: "અમે જથ્થાબંધ હોલસેલ ભાવે, સ્પેશિયલ વેક્યુમ પેકિંગ સાથે ભારતભરમાં સપ્લાય કરીએ છીએ.",
     requestQuoteTitle: "જથ્થાબંધ ક્વોટેશન મેળવો",
@@ -269,15 +308,18 @@ const translations: Record<Language, Translations> = {
     freeShipping: "₹499 से ऊपर मुफ्त डिलीवरी",
     swaadTagline: "असली गुजराती स्वाद • शुद्धता का भरोसा",
     trackOrderStatus: "ऑर्डर स्टेटस ट्रैक करें",
+    trackOrderBtn: "ऑर्डर स्टेटस ट्रैक करें",
     adminPanel: "एडमिन पैनल",
     backToStorefront: "← दुकान पर लौटें",
     searchPlaceholder: "खोजें खाखरा, बांधणी हींग, गांठिया, सेव...",
     bulkOrderBtn: "थोक ऑर्डर",
+    bulkOrdersNav: "थोक एवं शादी के ऑर्डर",
     cartBtn: "कार्ट",
     emptyCart: "खाली",
     itemsInCart: "सामान",
     authenticBadge: "100% प्रामाणिक",
     brandTagline: "नमकीन, मीठे व चटपटे फरसाण और शुद्ध हींग",
+    tagline: "असली गुजराती फरसाण और शुद्ध हींग",
 
     catAll: "सभी व्यंजन",
     catKhakhra: "खाखरा",
@@ -298,35 +340,44 @@ const translations: Record<Language, Translations> = {
     buyFreshBtn: "ताज़ा फरसाण व हींग खरीदें",
     bulkInquiryBtn: "थोक व शादी के ऑर्डर",
     specialAttraction: "विशेष आकर्षण",
-    heroSpecialTitle: "सूरीती वणेला गांठिया और कड़क बांधणी हींग",
+    heroSpecialTitle: "सूरती वणेला गांठिया और कड़क बांधणी हींग",
     heroSpecialDesc: "पारंपरिक तरीके से हाथों से तैयार और सुगंधित मसालों से भरपूर।",
 
     showingItems: "असली गुजराती फरसाण उत्पाद",
     selectWeightTitle: "ताज़ा व्यंजन खरीदने हेतु वज़न व फ्लेवर चुनें",
-    noMatchTitle: "कोई व्यंजन नहीं मिला",
-    noMatchDesc: "'खाखरा', 'बांधणी हींग' या 'गांठिया' खोजकर देखें।",
-    resetFilters: "फ़िल्टर रीसेट करें",
+    noMatchTitle: "इस श्रेणी में कोई व्यंजन नहीं है",
+    noMatchDesc: "चयनित श्रेणी या खोज के अनुसार कोई उत्पाद उपलब्ध नहीं है।",
+    resetFilters: "सभी व्यंजन देखें",
     addToCart: "कार्ट में जोड़ें",
     addedToCart: "जोड़ दिया गया",
     viewDetails: "विवरण देखें",
     chooseWeight: "वज़न / पैक चुनें:",
-    ingredientsLabel: "सामग्री:",
+    ingredientsLabel: "सामग्री",
     customerReviews: "ग्राहकों की समीक्षाएं",
     flavorLabel: "फ्लेवर:",
+    writeReview: "अपनी समीक्षा लिखें",
+    submitReviewBtn: "समीक्षा सबमिट करें",
 
     cartTitle: "आपकी शॉपिंग कार्ट",
     totalPayable: "कुल देय राशि",
     proceedToCheckout: "चेकआउट करें",
     checkoutTitle: "चेकआउट एवं डिलीवरी का पता",
     customerDetails: "ग्राहक एवं डिलीवरी विवरण",
-    fullName: "आपका पूरा नाम *",
-    mobileNumber: "मोबाइल नंबर *",
-    address: "डिलीवरी का पता *",
-    city: "शहर *",
-    pincode: "पिनकोड *",
+    fullName: "आपका पूरा नाम",
+    mobileNumber: "मोबाइल नंबर",
+    phone: "मोबाइल नंबर",
+    emailOptional: "ईमेल पता (वैकल्पिक)",
+    address: "डिलीवरी का पता",
+    fullAddress: "पूरा डिलीवरी पता",
+    city: "शहर",
+    pincode: "पिनकोड",
     confirmOrderBtn: "ऑर्डर कन्फ़र्म करें",
+    placeOrderBtn: "ऑर्डर कन्फ़र्म करें",
     placingOrder: "ऑर्डर भेजा जा रहा है...",
 
+    orderId: "ऑर्डर आईडी",
+    unconfirmedStatus: "स्टोर मालिक की पुष्टि प्रतीक्षित",
+    confirmedStatus: "मालिक द्वारा ऑर्डर कन्फ़र्म",
     awaitingConfirmation: "दुकानदार की पुष्टि प्रतीक्षित:",
     awaitingDesc: "आपका ऑर्डर दर्ज कर लिया गया है! गिरिराज फरसाण के मालिक स्टॉक चेक करके 'ऑर्डर कन्फर्म' करेंगे। अभी कोई ऑनलाइन भुगतान आवश्यक नहीं है।",
     checkStatusBtn: "पुष्टि स्थिति जांचें",
@@ -335,6 +386,7 @@ const translations: Record<Language, Translations> = {
     findOrderBtn: "ऑर्डर खोजें",
 
     bulkSectionTag: "थोक ऑर्डर एवं शादी कैटरिंग",
+    bulkInquiryTitle: "थोक एवं शादी ऑर्डर पूछताछ",
     bulkSectionTitle: "शादी-ब्याह, नवरात्रि उत्सव व कॉर्पोरेट थोक ऑर्डर",
     bulkSectionDesc: "हम थोक रियायती दरों पर, वैक्यूम पैकेजिंग के साथ पूरे भारत में ताज़ा माल सप्लाई करते हैं।",
     requestQuoteTitle: "थोक दर पूछताछ फ़ॉर्म",

@@ -2,7 +2,7 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import { INITIAL_PRODUCTS, INITIAL_REVIEWS } from './src/data/initialData.ts';
-import type { Product, Order, Review, BulkInquiry } from './src/types.ts';
+import type { Product, Order, Review, BulkInquiry, OrderItem } from './src/types.ts';
 import { getSupabase, setCustomSupabaseCredentials, getSupabaseCredentials, SUPABASE_SQL_SCHEMA } from './src/lib/supabase.ts';
 
 const app = express();
@@ -21,7 +21,6 @@ app.use((req: any, _res: any, next: any) => {
   next();
 });
 
-// In-memory data store with file persistence and Supabase synchronization
 const STORE_FILE = process.env.VERCEL
   ? path.join('/tmp', 'data_store.json')
   : path.join(process.cwd(), 'data_store.json');
@@ -39,83 +38,9 @@ interface StoreData {
 
 let store: StoreData = {
   products: [...INITIAL_PRODUCTS],
-  orders: [
-    {
-      id: 'GRJ-8491',
-      customerName: 'Hareshbhai Vora',
-      phone: '9825012345',
-      address: '102 Shivam Heights, Ring Road',
-      city: 'Rajkot',
-      pincode: '360005',
-      email: 'haresh.vora@example.com',
-      items: [
-        {
-          productId: 'prod-khakhra-1',
-          productName: 'Handcrafted Methi Khakhra',
-          optionLabel: '1 Packet (200g)',
-          flavor: 'Classic Methi',
-          quantity: 2,
-          unitPrice: 75,
-          totalPrice: 150
-        },
-        {
-          productId: 'prod-hing-1',
-          productName: 'Pure Royal Bandhani Hing',
-          optionLabel: '100 Grams Pack',
-          quantity: 1,
-          unitPrice: 300,
-          totalPrice: 300
-        }
-      ],
-      subtotal: 450,
-      deliveryFee: 0,
-      totalAmount: 450,
-      status: 'pending_confirmation',
-      createdAt: new Date(Date.now() - 3600000).toISOString(),
-      notes: 'Please leave with security if unavailable'
-    },
-    {
-      id: 'GRJ-8488',
-      customerName: 'Anjali Trivedi',
-      phone: '9909988776',
-      address: 'B-404 Satellite Apartments',
-      city: 'Ahmedabad',
-      pincode: '380015',
-      email: 'anjali.t@example.com',
-      items: [
-        {
-          productId: 'prod-farshan-1',
-          productName: 'Surti Melt-in-Mouth Vanela Gathiya',
-          optionLabel: '500g Pack',
-          flavor: 'Classic Surti Soft',
-          quantity: 2,
-          unitPrice: 210,
-          totalPrice: 420
-        }
-      ],
-      subtotal: 420,
-      deliveryFee: 40,
-      totalAmount: 460,
-      status: 'confirmed',
-      createdAt: new Date(Date.now() - 86400000).toISOString()
-    }
-  ],
+  orders: [],
   reviews: [...INITIAL_REVIEWS],
-  bulkInquiries: [
-    {
-      id: 'BULK-101',
-      name: 'Ramesh Patel',
-      phone: '9898011223',
-      email: 'ramesh.events@example.com',
-      businessOrEvent: 'Navratri Garba Festival Catering',
-      eventDate: '2026-10-15',
-      expectedQuantity: '50 kg Gathiya + 100 Packets Khakhra',
-      productsInterested: ['Surti Vanela Gathiya', 'Handcrafted Methi Khakhra'],
-      message: 'Need vacuum packed boxes for guest gifts during Garba night.',
-      status: 'new',
-      createdAt: new Date(Date.now() - 72000000).toISOString()
-    }
-  ]
+  bulkInquiries: [],
 };
 
 function safeJsonParse(val: any, fallback: any) {
@@ -128,49 +53,83 @@ function safeJsonParse(val: any, fallback: any) {
   }
 }
 
+function computeServerOrderAmounts(
+  items: OrderItem[],
+  rawSubtotal?: any,
+  rawDeliveryFee?: any,
+  rawTotalAmount?: any
+) {
+  const safeItems = Array.isArray(items) ? items : [];
+  const itemsSum = safeItems.reduce((sum, it: any) => {
+    const itemTotal =
+      Number(it.totalPrice) || Number(it.unitPrice || 0) * Number(it.quantity || 1) || 0;
+    return sum + itemTotal;
+  }, 0);
+
+  const parsedSub = Number(rawSubtotal);
+  const subtotal = parsedSub > 0 ? parsedSub : itemsSum;
+
+  const parsedFee = Number(rawDeliveryFee);
+  const deliveryFee =
+    !Number.isNaN(parsedFee) && rawDeliveryFee !== undefined && rawDeliveryFee !== null && parsedSub > 0
+      ? parsedFee
+      : subtotal >= 499 || subtotal === 0
+      ? 0
+      : 40;
+
+  const parsedTotal = Number(rawTotalAmount);
+  const totalAmount = parsedTotal > 0 ? parsedTotal : subtotal + deliveryFee;
+
+  return { subtotal, deliveryFee, totalAmount };
+}
+
 let lastSyncTimestamp = 0;
-let isSyncing = false;
+let activeSyncPromise: Promise<void> | null = null;
 
 async function ensureSupabaseSynced(force = false) {
   const supabase = getSupabase();
   if (!supabase) return;
 
   const now = Date.now();
-  if (force || now - lastSyncTimestamp > 3000) {
-    if (isSyncing) return;
-    isSyncing = true;
-    try {
-      await syncFromSupabase();
-      lastSyncTimestamp = Date.now();
-    } catch (err) {
-      console.error('Error in ensureSupabaseSynced:', err);
-    } finally {
-      isSyncing = false;
+  if (force || now - lastSyncTimestamp > 2000) {
+    if (activeSyncPromise) {
+      await activeSyncPromise;
+      return;
     }
+    activeSyncPromise = syncFromSupabase()
+      .then(() => {
+        lastSyncTimestamp = Date.now();
+      })
+      .catch((err) => {
+        console.error('Error in ensureSupabaseSynced:', err);
+      })
+      .finally(() => {
+        activeSyncPromise = null;
+      });
+    await activeSyncPromise;
   }
 }
 
-// Sync with Supabase asynchronously if configured
 async function syncFromSupabase() {
   const supabase = getSupabase();
   if (!supabase) return;
 
   try {
     const [pRes, oRes, rRes, bRes] = await Promise.all([
-      supabase.from('products').select('*'),
-      supabase.from('orders').select('*'),
-      supabase.from('reviews').select('*'),
-      supabase.from('bulk_inquiries').select('*')
+      supabase.from('products').select('*').order('created_at', { ascending: false }),
+      supabase.from('orders').select('*').order('created_at', { ascending: false }),
+      supabase.from('reviews').select('*').order('date', { ascending: false }),
+      supabase.from('bulk_inquiries').select('*').order('created_at', { ascending: false }),
     ]);
 
-    if (!pRes.error && pRes.data && pRes.data.length > 0) {
+    if (!pRes.error && Array.isArray(pRes.data)) {
       store.products = pRes.data.map((p: any) => ({
         id: p.id,
         name: p.name,
         gujaratiName: p.gujarati_name,
         category: p.category,
-        description: p.description,
-        ingredients: p.ingredients,
+        description: p.description || '',
+        ingredients: p.ingredients || '',
         imageUrl: p.image_url || p.image || '',
         rating: Number(p.rating || 5),
         reviewCount: Number(p.review_count || 0),
@@ -178,36 +137,40 @@ async function syncFromSupabase() {
         inStock: p.in_stock !== undefined ? Boolean(p.in_stock) : true,
         options: safeJsonParse(p.options, []),
         flavors: safeJsonParse(p.flavors, []),
-        saleType: p.sale_type || 'weight'
-      }));
-    } else if (!pRes.error && pRes.data && pRes.data.length === 0) {
-      // Auto-seed Supabase with default initial products
-      for (const p of INITIAL_PRODUCTS) {
-        await saveProductToSupabase(p);
-      }
-    }
-
-    if (!oRes.error && oRes.data) {
-      store.orders = oRes.data.map((o: any) => ({
-        id: o.id,
-        customerName: o.customer_name,
-        phone: o.phone,
-        address: o.address,
-        city: o.city,
-        pincode: o.pincode,
-        email: o.email,
-        items: safeJsonParse(o.items, []),
-        subtotal: Number(o.subtotal || 0),
-        deliveryFee: Number(o.delivery_fee || 0),
-        totalAmount: Number(o.total_amount || 0),
-        status: o.status,
-        adminNotes: o.admin_notes,
-        notes: o.notes,
-        createdAt: o.created_at
+        saleType: p.sale_type || 'weight',
       }));
     }
 
-    if (!rRes.error && rRes.data && rRes.data.length > 0) {
+    if (!oRes.error && Array.isArray(oRes.data)) {
+      store.orders = oRes.data.map((o: any) => {
+        const items = safeJsonParse(o.items, []);
+        const { subtotal, deliveryFee, totalAmount } = computeServerOrderAmounts(
+          items,
+          o.subtotal,
+          o.delivery_fee,
+          o.total_amount
+        );
+        return {
+          id: o.id,
+          customerName: o.customer_name,
+          phone: o.phone,
+          address: o.address,
+          city: o.city || '',
+          pincode: o.pincode || '',
+          email: o.email || '',
+          items,
+          subtotal,
+          deliveryFee,
+          totalAmount,
+          status: o.status || 'pending_confirmation',
+          adminNotes: o.admin_notes || '',
+          notes: o.notes || '',
+          createdAt: o.created_at,
+        };
+      });
+    }
+
+    if (!rRes.error && Array.isArray(rRes.data) && rRes.data.length > 0) {
       store.reviews = rRes.data.map((r: any) => ({
         id: r.id,
         productId: r.product_id,
@@ -216,43 +179,38 @@ async function syncFromSupabase() {
         rating: Number(r.rating || 5),
         comment: r.comment,
         date: r.date,
-        isVerifiedPurchase: Boolean(r.is_verified_purchase)
+        isVerifiedPurchase: Boolean(r.is_verified_purchase),
       }));
     }
 
-    if (!bRes.error && bRes.data && bRes.data.length > 0) {
+    if (!bRes.error && Array.isArray(bRes.data)) {
       store.bulkInquiries = bRes.data.map((b: any) => ({
         id: b.id,
         name: b.name,
         phone: b.phone,
-        email: b.email,
-        businessOrEvent: b.business_or_event,
-        eventDate: b.event_date,
+        email: b.email || '',
+        businessOrEvent: b.business_or_event || '',
+        eventDate: b.event_date || '',
         expectedQuantity: b.expected_quantity,
         productsInterested: safeJsonParse(b.products_interested, []),
-        message: b.message,
-        status: b.status,
-        createdAt: b.created_at
+        message: b.message || '',
+        status: b.status || 'new',
+        createdAt: b.created_at,
       }));
     }
 
-    saveStore();
+    saveStoreAsync();
   } catch (err) {
     console.error('Supabase sync warning:', err);
   }
 }
 
-// Save store to disk and optionally to Supabase
-function saveStore() {
-  try {
-    const dir = path.dirname(STORE_FILE);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(STORE_FILE, JSON.stringify(store, null, 2), 'utf-8');
-  } catch (err) {
+function saveStoreAsync() {
+  if (process.env.VERCEL) return; // Skip unnecessary disk I/O in ephemeral serverless functions
+  const payload = JSON.stringify(store, null, 2);
+  fs.promises.writeFile(STORE_FILE, payload, 'utf-8').catch((err) => {
     console.error('Failed to save store file:', err);
-  }
+  });
 }
 
 async function saveProductToSupabase(product: Product) {
@@ -273,7 +231,7 @@ async function saveProductToSupabase(product: Product) {
       in_stock: product.inStock ?? true,
       options: product.options,
       flavors: product.flavors || [],
-      sale_type: product.saleType || 'weight'
+      sale_type: product.saleType || 'weight',
     });
     if (error) {
       console.error('Failed to upsert product to Supabase:', error.message || error);
@@ -315,7 +273,7 @@ async function saveOrderToSupabase(order: Order) {
       status: order.status,
       admin_notes: order.adminNotes || null,
       notes: order.notes || null,
-      created_at: order.createdAt
+      created_at: order.createdAt,
     });
     if (error) {
       console.error('Failed to upsert order to Supabase:', error.message || error);
@@ -337,7 +295,7 @@ async function saveReviewToSupabase(review: Review) {
       rating: review.rating,
       comment: review.comment,
       date: review.date,
-      is_verified_purchase: review.isVerifiedPurchase ?? true
+      is_verified_purchase: review.isVerifiedPurchase ?? true,
     });
     if (error) {
       console.error('Failed to upsert review to Supabase:', error.message || error);
@@ -362,7 +320,7 @@ async function saveBulkInquiryToSupabase(inquiry: BulkInquiry) {
       products_interested: inquiry.productsInterested || [],
       message: inquiry.message || null,
       status: inquiry.status,
-      created_at: inquiry.createdAt
+      created_at: inquiry.createdAt,
     });
     if (error) {
       console.error('Failed to upsert bulk inquiry to Supabase:', error.message || error);
@@ -372,7 +330,6 @@ async function saveBulkInquiryToSupabase(inquiry: BulkInquiry) {
   }
 }
 
-// Load store from disk
 function loadStore() {
   try {
     if (fs.existsSync(STORE_FILE)) {
@@ -392,7 +349,7 @@ function loadStore() {
 
 loadStore();
 if (getSupabase()) {
-  syncFromSupabase().catch((err) => {
+  ensureSupabaseSynced(true).catch((err) => {
     console.error('Initial Supabase sync error:', err);
   });
 }
@@ -400,8 +357,7 @@ if (getSupabase()) {
 // ================= API ROUTES =================
 const apiRouter = express.Router();
 
-// Supabase Status & Schema Route for Admin
-apiRouter.get('/supabase/status', async (req, res) => {
+apiRouter.get('/supabase/status', async (_req, res) => {
   try {
     const supabase = getSupabase();
     const creds = getSupabaseCredentials();
@@ -426,17 +382,16 @@ apiRouter.get('/supabase/status', async (req, res) => {
       supabaseUrl: creds?.url || null,
       pingSuccess,
       pingError,
-      sqlSchema: SUPABASE_SQL_SCHEMA
+      sqlSchema: SUPABASE_SQL_SCHEMA,
     });
   } catch (err: any) {
     res.status(500).json({ error: err?.message || 'Failed to check status' });
   }
 });
 
-// Connect Supabase directly via URL & Key
 apiRouter.post('/supabase/connect', async (req, res) => {
   try {
-    const body = typeof req.body === 'string' ? safeJsonParse(req.body, {}) : (req.body || {});
+    const body = typeof req.body === 'string' ? safeJsonParse(req.body, {}) : req.body || {};
     const { supabaseUrl, supabaseKey } = body;
     if (!supabaseUrl || !supabaseKey) {
       return res.status(400).json({ error: 'Both Supabase URL and Key are required.' });
@@ -451,9 +406,8 @@ apiRouter.post('/supabase/connect', async (req, res) => {
 
     setCustomSupabaseCredentials(cleanUrl, cleanKey);
     store.supabaseConfig = { url: cleanUrl, key: cleanKey };
-    saveStore();
+    saveStoreAsync();
 
-    // Re-test connection immediately
     const supabase = getSupabase();
     let pingSuccess = false;
     let pingError: string | null = null;
@@ -471,12 +425,7 @@ apiRouter.post('/supabase/connect', async (req, res) => {
       }
     }
 
-    // Safely await sync so Vercel serverless context is not prematurely torn down
-    try {
-      await syncFromSupabase();
-    } catch (syncErr: any) {
-      console.error('Initial sync warning after connect:', syncErr?.message || syncErr);
-    }
+    await ensureSupabaseSynced(true);
 
     res.json({
       success: true,
@@ -484,9 +433,11 @@ apiRouter.post('/supabase/connect', async (req, res) => {
       supabaseUrl: cleanUrl,
       pingSuccess,
       pingError,
-      message: pingSuccess 
-        ? 'Successfully connected & verified Supabase!' 
-        : (pingError ? `Client created, but test query returned: ${pingError}. Make sure SQL schema is executed!` : 'Supabase credentials saved!')
+      message: pingSuccess
+        ? 'Successfully connected & verified Supabase!'
+        : pingError
+        ? `Client created, but test query returned: ${pingError}. Make sure SQL schema is executed!`
+        : 'Supabase credentials saved!',
     });
   } catch (err: any) {
     console.error('Supabase connect handler error:', err);
@@ -531,21 +482,23 @@ apiRouter.post('/products', async (req, res) => {
 
     const newProduct: Product = {
       ...body,
-      id: `prod-${Date.now()}`,
+      id: body.id || `prod-${Date.now()}`,
       name: body.name,
       category: body.category,
       description: body.description || '',
-      imageUrl: body.imageUrl || 'https://images.unsplash.com/photo-1601050690597-df0568f70950?auto=format&fit=crop&q=80&w=800',
+      imageUrl:
+        body.imageUrl ||
+        'https://images.unsplash.com/photo-1601050690597-df0568f70950?auto=format&fit=crop&q=80&w=800',
       rating: Number(body.rating) || 5.0,
       reviewCount: Number(body.reviewCount) || 0,
       inStock: body.inStock ?? true,
       isBestSeller: Boolean(body.isBestSeller),
       saleType: body.saleType || 'weight',
-      options: body.options || []
+      options: body.options || [],
     };
 
-    store.products.unshift(newProduct);
-    saveStore();
+    store.products = [newProduct, ...store.products.filter((p) => p.id !== newProduct.id)];
+    saveStoreAsync();
     await saveProductToSupabase(newProduct);
     return res.status(201).json({ product: newProduct });
   } catch (err: any) {
@@ -557,20 +510,25 @@ apiRouter.post('/products', async (req, res) => {
 // 3. Update Product (Admin)
 apiRouter.put('/products/:id', async (req, res) => {
   try {
+    await ensureSupabaseSynced();
     const { id } = req.params;
     const body = req.body || {};
     const index = store.products.findIndex((p) => p.id === id);
-    if (index === -1) {
-      return res.status(404).json({ error: 'Product not found' });
+
+    const updatedProduct: Product =
+      index !== -1
+        ? { ...store.products[index], ...body, id }
+        : ({ id, ...body } as Product);
+
+    if (index !== -1) {
+      store.products[index] = updatedProduct;
+    } else {
+      store.products.unshift(updatedProduct);
     }
 
-    store.products[index] = {
-      ...store.products[index],
-      ...body
-    };
-    saveStore();
-    await saveProductToSupabase(store.products[index]);
-    return res.json({ product: store.products[index] });
+    saveStoreAsync();
+    await saveProductToSupabase(updatedProduct);
+    return res.json({ product: updatedProduct });
   } catch (err: any) {
     console.error('Error updating product:', err);
     return res.status(500).json({ error: err?.message || 'Failed to update product' });
@@ -582,7 +540,7 @@ apiRouter.delete('/products/:id', async (req, res) => {
   try {
     const { id } = req.params;
     store.products = store.products.filter((p) => p.id !== id);
-    saveStore();
+    saveStoreAsync();
     await deleteProductFromSupabase(id);
     return res.json({ success: true, message: 'Product deleted successfully' });
   } catch (err: any) {
@@ -592,7 +550,7 @@ apiRouter.delete('/products/:id', async (req, res) => {
 });
 
 // 5. Get All Orders (Admin)
-apiRouter.get('/orders', async (req, res) => {
+apiRouter.get('/orders', async (_req, res) => {
   try {
     await ensureSupabaseSynced();
     res.json({ orders: store.orders });
@@ -604,32 +562,53 @@ apiRouter.get('/orders', async (req, res) => {
 // 6. Create Order (Customer)
 apiRouter.post('/orders', async (req, res) => {
   try {
-    const { customerName, phone, address, city, pincode, email, items, subtotal, deliveryFee, notes } = req.body;
+    const {
+      id,
+      customerName,
+      phone,
+      address,
+      city,
+      pincode,
+      email,
+      items,
+      subtotal: rawSubtotal,
+      deliveryFee: rawDeliveryFee,
+      totalAmount: rawTotalAmount,
+      notes,
+    } = req.body;
 
     if (!customerName || !phone || !address || !items || !items.length) {
       return res.status(400).json({ error: 'Missing required customer details or items' });
     }
 
-    const randomNum = Math.floor(1000 + Math.random() * 9000);
+    const { subtotal, deliveryFee, totalAmount } = computeServerOrderAmounts(
+      items,
+      rawSubtotal,
+      rawDeliveryFee,
+      rawTotalAmount
+    );
+
+    const timePart = Date.now().toString().slice(-4);
+    const randPart = Math.floor(10 + Math.random() * 90).toString();
     const newOrder: Order = {
-      id: `GRJ-${randomNum}`,
+      id: id || `GRJ-${timePart}${randPart}`,
       customerName,
       phone,
       address,
-      city: city || 'Gujarat',
+      city: city || 'Ahmedabad',
       pincode: pincode || '',
       email: email || '',
       items,
-      subtotal: subtotal || 0,
-      deliveryFee: deliveryFee || 0,
-      totalAmount: (subtotal || 0) + (deliveryFee || 0),
+      subtotal,
+      deliveryFee,
+      totalAmount,
       status: 'pending_confirmation',
       createdAt: new Date().toISOString(),
-      notes: notes || ''
+      notes: notes || '',
     };
 
-    store.orders.unshift(newOrder);
-    saveStore();
+    store.orders = [newOrder, ...store.orders.filter((o) => o.id !== newOrder.id)];
+    saveStoreAsync();
     await saveOrderToSupabase(newOrder);
 
     res.status(201).json({ order: newOrder });
@@ -647,10 +626,10 @@ apiRouter.get('/orders/track', async (req, res) => {
       return res.status(400).json({ error: 'Please provide phone number or order ID' });
     }
 
-    const cleanQuery = query.trim().toLowerCase();
+    const cleanQuery = query.trim().replace(/^#/, '').toLowerCase();
     const matched = store.orders.filter(
       (o) =>
-        o.id.toLowerCase() === cleanQuery ||
+        o.id.toLowerCase().includes(cleanQuery) ||
         o.phone.includes(cleanQuery) ||
         o.customerName.toLowerCase().includes(cleanQuery)
     );
@@ -661,25 +640,31 @@ apiRouter.get('/orders/track', async (req, res) => {
   }
 });
 
-// 8. Update Order Status (Admin Confirm / Cancel)
+// 8. Update Order Status (Admin Confirm / Dispatch / Cancel)
 apiRouter.put('/orders/:id/status', async (req, res) => {
   try {
+    await ensureSupabaseSynced();
     const { id } = req.params;
     const { status, adminNotes } = req.body;
 
+    const supabase = getSupabase();
+    if (supabase) {
+      const payload: any = { status };
+      if (adminNotes !== undefined) payload.admin_notes = adminNotes;
+      await supabase.from('orders').update(payload).eq('id', id);
+    }
+
     const order = store.orders.find((o) => o.id === id);
-    if (!order) {
-      return res.status(404).json({ error: 'Order not found' });
+    if (order) {
+      order.status = status;
+      if (adminNotes !== undefined) {
+        order.adminNotes = adminNotes;
+      }
+      saveStoreAsync();
+      return res.json({ order });
     }
 
-    order.status = status;
-    if (adminNotes !== undefined) {
-      order.adminNotes = adminNotes;
-    }
-
-    saveStore();
-    await saveOrderToSupabase(order);
-    res.json({ order });
+    return res.json({ order: { id, status, adminNotes } });
   } catch (err: any) {
     res.status(500).json({ error: err?.message || 'Failed to update order status' });
   }
@@ -703,21 +688,21 @@ apiRouter.get('/reviews', async (req, res) => {
 // 10. Post Review
 apiRouter.post('/reviews', async (req, res) => {
   try {
-    const { productId, productName, customerName, rating, comment } = req.body;
+    const { id, productId, productName, customerName, rating, comment } = req.body;
 
     if (!customerName || !rating || !comment) {
       return res.status(400).json({ error: 'Name, rating, and comment are required' });
     }
 
     const newReview: Review = {
-      id: `rev-${Date.now()}`,
+      id: id || `rev-${Date.now()}`,
       productId: productId || 'storewide',
       productName: productName || 'Store Experience',
       customerName,
       rating: Number(rating),
       comment,
       date: new Date().toISOString().split('T')[0],
-      isVerifiedPurchase: true
+      isVerifiedPurchase: true,
     };
 
     store.reviews.unshift(newReview);
@@ -734,7 +719,7 @@ apiRouter.post('/reviews', async (req, res) => {
       }
     }
 
-    saveStore();
+    saveStoreAsync();
     res.status(201).json({ review: newReview });
   } catch (err: any) {
     res.status(500).json({ error: err?.message || 'Failed to post review' });
@@ -742,7 +727,7 @@ apiRouter.post('/reviews', async (req, res) => {
 });
 
 // 11. Get Bulk Inquiries
-apiRouter.get('/bulk-inquiries', async (req, res) => {
+apiRouter.get('/bulk-inquiries', async (_req, res) => {
   try {
     await ensureSupabaseSynced();
     res.json({ inquiries: store.bulkInquiries });
@@ -754,14 +739,24 @@ apiRouter.get('/bulk-inquiries', async (req, res) => {
 // 12. Submit Bulk Inquiry
 apiRouter.post('/bulk-inquiries', async (req, res) => {
   try {
-    const { name, phone, email, businessOrEvent, eventDate, expectedQuantity, productsInterested, message } = req.body;
+    const {
+      id,
+      name,
+      phone,
+      email,
+      businessOrEvent,
+      eventDate,
+      expectedQuantity,
+      productsInterested,
+      message,
+    } = req.body;
 
     if (!name || !phone || !expectedQuantity) {
       return res.status(400).json({ error: 'Name, Phone and Expected Quantity are required' });
     }
 
     const newInquiry: BulkInquiry = {
-      id: `BULK-${Math.floor(100 + Math.random() * 900)}`,
+      id: id || `BULK-${Date.now().toString().slice(-3)}${Math.floor(10 + Math.random() * 90)}`,
       name,
       phone,
       email: email || '',
@@ -771,11 +766,11 @@ apiRouter.post('/bulk-inquiries', async (req, res) => {
       productsInterested: productsInterested || [],
       message: message || '',
       status: 'new',
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
     };
 
     store.bulkInquiries.unshift(newInquiry);
-    saveStore();
+    saveStoreAsync();
     await saveBulkInquiryToSupabase(newInquiry);
     res.status(201).json({ inquiry: newInquiry });
   } catch (err: any) {
@@ -786,33 +781,40 @@ apiRouter.post('/bulk-inquiries', async (req, res) => {
 // 13. Update Bulk Inquiry Status (Admin)
 apiRouter.put('/bulk-inquiries/:id/status', async (req, res) => {
   try {
+    await ensureSupabaseSynced();
     const { id } = req.params;
     const { status } = req.body;
 
-    const inquiry = store.bulkInquiries.find((b) => b.id === id);
-    if (!inquiry) {
-      return res.status(404).json({ error: 'Inquiry not found' });
+    const supabase = getSupabase();
+    if (supabase) {
+      await supabase.from('bulk_inquiries').update({ status }).eq('id', id);
     }
 
-    inquiry.status = status;
-    saveStore();
-    await saveBulkInquiryToSupabase(inquiry);
-    res.json({ inquiry });
+    const inquiry = store.bulkInquiries.find((b) => b.id === id);
+    if (inquiry) {
+      inquiry.status = status;
+      saveStoreAsync();
+      return res.json({ inquiry });
+    }
+
+    return res.json({ inquiry: { id, status } });
   } catch (err: any) {
     res.status(500).json({ error: err?.message || 'Failed to update bulk inquiry status' });
   }
 });
 
 // 14. Admin Overview Stats
-apiRouter.get('/stats', async (req, res) => {
+apiRouter.get('/stats', async (_req, res) => {
   try {
     await ensureSupabaseSynced();
     const totalOrders = store.orders.length;
     const pendingOrders = store.orders.filter((o) => o.status === 'pending_confirmation').length;
-    const confirmedOrders = store.orders.filter((o) => o.status === 'confirmed' || o.status === 'dispatched').length;
+    const confirmedOrders = store.orders.filter(
+      (o) => o.status === 'confirmed' || o.status === 'dispatched'
+    ).length;
     const totalRevenue = store.orders
       .filter((o) => o.status !== 'cancelled')
-      .reduce((sum, o) => sum + o.totalAmount, 0);
+      .reduce((sum, o) => sum + (Number(o.totalAmount) || 0), 0);
     const totalProducts = store.products.length;
     const totalBulkInquiries = store.bulkInquiries.length;
 
@@ -822,7 +824,7 @@ apiRouter.get('/stats', async (req, res) => {
       confirmedOrders,
       totalRevenue,
       totalProducts,
-      totalBulkInquiries
+      totalBulkInquiries,
     });
   } catch (err: any) {
     res.status(500).json({ error: err?.message || 'Failed to fetch admin stats' });
@@ -832,7 +834,6 @@ apiRouter.get('/stats', async (req, res) => {
 app.use('/api', apiRouter);
 app.use('/', apiRouter);
 
-// ================= VITE / STATIC MIDDLEWARE =================
 async function startServer() {
   const distPath = path.join(process.cwd(), 'dist');
   const hasDist = fs.existsSync(path.join(distPath, 'index.html'));
@@ -848,7 +849,7 @@ async function startServer() {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
-      appType: 'spa'
+      appType: 'spa',
     });
     app.use(vite.middlewares);
   }

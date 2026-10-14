@@ -1,13 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { Product, Review, WeightPriceOption } from '../types';
 import { X, Star, Check, ShoppingCart, User } from 'lucide-react';
-import { fetchReviews, submitReview } from '../services/api';
+import { fetchReviews, submitReview, FALLBACK_IMAGES, resolveProductImage } from '../services/api';
 import { useLanguage } from '../context/LanguageContext';
 
 interface ProductDetailModalProps {
   product: Product | null;
   onClose: () => void;
-  onAddToCart: (product: Product, option: WeightPriceOption, flavor: string | undefined, quantity: number) => void;
+  onAddToCart: (
+    product: Product,
+    option: WeightPriceOption,
+    flavor: string | undefined,
+    quantity: number
+  ) => void;
 }
 
 export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
@@ -40,7 +45,9 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   useEffect(() => {
     if (product) {
       setSelectedOption(product.options?.[0] || { id: 'default', label: 'Standard', price: 100 });
-      setSelectedFlavor(product.flavors && product.flavors.length > 0 ? product.flavors[0] : undefined);
+      setSelectedFlavor(
+        product.flavors && product.flavors.length > 0 ? product.flavors[0] : undefined
+      );
       setQuantity(1);
       setIsAdded(false);
       setLoadingReviews(true);
@@ -64,7 +71,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
         productName: product.name,
         customerName: customerName.trim(),
         rating: newRating,
-        comment: comment.trim()
+        comment: comment.trim(),
       });
       setReviews([created, ...reviews]);
       setCustomerName('');
@@ -83,6 +90,8 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
     setIsAdded(true);
     setTimeout(() => setIsAdded(false), 1800);
   };
+
+  const displayImageUrl = resolveProductImage(product.imageUrl, product.category);
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex justify-center items-start sm:items-center p-2 sm:p-4 overflow-y-auto animate-fade-in">
@@ -110,8 +119,17 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
             {/* Product Image */}
             <div className="rounded-xl overflow-hidden aspect-[4/3] bg-[#FEFBF2] border border-[#EED4A8] relative">
               <img
-                src={product.imageUrl}
+                src={displayImageUrl}
                 alt={product.name}
+                loading="lazy"
+                decoding="async"
+                onError={(e) => {
+                  const target = e.currentTarget;
+                  const fallback = FALLBACK_IMAGES[product.category] || FALLBACK_IMAGES.default;
+                  if (target.src !== fallback) {
+                    target.src = fallback;
+                  }
+                }}
                 className="w-full h-full object-cover"
               />
               <span className="absolute bottom-2 left-2 bg-[#451A03]/90 text-[#FEF3C7] text-[10px] px-2 py-0.5 rounded backdrop-blur-sm">
@@ -142,7 +160,9 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                     <Star
                       key={s}
                       className={`w-4 h-4 ${
-                        s <= Math.round(product.rating) ? 'fill-[#D97706] text-[#D97706]' : 'text-stone-300'
+                        s <= Math.round(product.rating)
+                          ? 'fill-[#D97706] text-[#D97706]'
+                          : 'text-stone-300'
                       }`}
                     />
                   ))}
@@ -151,13 +171,13 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 <span className="text-[#78350F]">({product.reviewCount} customer ratings)</span>
               </div>
 
-              <p className="text-xs text-[#78350F] leading-relaxed">
-                {product.description}
-              </p>
+              <p className="text-xs text-[#78350F] leading-relaxed">{product.description}</p>
 
               {product.ingredients && (
                 <div className="p-2.5 rounded-xl bg-[#FEFBF2] border border-[#EED4A8] text-xs">
-                  <span className="font-bold text-[#451A03] block mb-0.5">{t.ingredientsLabel}:</span>
+                  <span className="font-bold text-[#451A03] block mb-0.5">
+                    {t.ingredientsLabel}:
+                  </span>
                   <span className="text-[#78350F]">{product.ingredients}</span>
                 </div>
               )}
@@ -165,7 +185,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               {/* Weight Selector */}
               <div className="pt-2">
                 <label className="block text-xs font-bold text-[#451A03] mb-1">
-                  {t.chooseWeight}:
+                  {t.chooseWeight}
                 </label>
                 <div className="grid grid-cols-3 gap-2">
                   {product.options.map((opt) => (
@@ -194,7 +214,9 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   >
                     -
                   </button>
-                  <span className="w-8 text-center text-xs font-bold text-[#451A03]">{quantity}</span>
+                  <span className="w-8 text-center text-xs font-bold text-[#451A03]">
+                    {quantity}
+                  </span>
                   <button
                     onClick={() => setQuantity((q) => q + 1)}
                     className="w-7 h-7 bg-white rounded-lg font-bold text-[#451A03] hover:bg-[#FEF3C7] text-sm"
@@ -228,7 +250,8 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 
             {reviewSuccess && (
               <div className="p-2.5 bg-emerald-100 text-emerald-900 text-xs rounded-xl font-medium flex items-center gap-1.5">
-                <Check className="w-4 h-4 text-emerald-700" /> Thank you! Your review has been published.
+                <Check className="w-4 h-4 text-emerald-700" /> Thank you! Your review has been
+                published.
               </div>
             )}
 
@@ -245,9 +268,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                     >
                       <Star
                         className={`w-5 h-5 ${
-                          star <= newRating
-                            ? 'fill-[#D97706] text-[#D97706]'
-                            : 'text-stone-300'
+                          star <= newRating ? 'fill-[#D97706] text-[#D97706]' : 'text-stone-300'
                         }`}
                       />
                     </button>
@@ -297,11 +318,16 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
             {loadingReviews ? (
               <p className="text-xs text-[#78350F] italic">Loading reviews...</p>
             ) : reviews.length === 0 ? (
-              <p className="text-xs text-[#78350F] italic">No reviews yet for this product. Be the first to review!</p>
+              <p className="text-xs text-[#78350F] italic">
+                No reviews yet for this product. Be the first to review!
+              </p>
             ) : (
               <div className="space-y-2.5 max-h-60 overflow-y-auto pr-1">
                 {reviews.map((rev) => (
-                  <div key={rev.id} className="p-3 bg-white rounded-xl border border-[#EED4A8] text-xs space-y-1">
+                  <div
+                    key={rev.id}
+                    className="p-3 bg-white rounded-xl border border-[#EED4A8] text-xs space-y-1"
+                  >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5 font-bold text-[#451A03]">
                         <User className="w-3.5 h-3.5 text-[#D97706]" />
@@ -337,4 +363,3 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
     </div>
   );
 };
-

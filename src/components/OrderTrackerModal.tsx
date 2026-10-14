@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Order } from '../types';
-import { X, Search, Clock, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
-import { trackOrder } from '../services/api';
+import { X, Search, Clock, CheckCircle2, AlertCircle, RefreshCw, Truck } from 'lucide-react';
+import { trackOrder, subscribeToStoreChanges } from '../services/api';
 import { useLanguage } from '../context/LanguageContext';
 
 interface OrderTrackerModalProps {
@@ -16,6 +16,21 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({ isOpen, on
   const [orders, setOrders] = useState<Order[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen || !searched || !query.trim()) return;
+    const currentQuery = query.trim();
+
+    const unsubscribe = subscribeToStoreChanges({
+      onOrdersChange: () => {
+        trackOrder(currentQuery)
+          .then((results) => setOrders(results))
+          .catch(console.error);
+      },
+    });
+
+    return () => unsubscribe();
+  }, [isOpen, searched, query]);
 
   if (!isOpen) return null;
 
@@ -61,7 +76,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({ isOpen, on
               <input
                 type="text"
                 required
-                placeholder="Enter Phone Number or Order ID..."
+                placeholder={t.searchOrderPlaceholder}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 className="w-full pl-9 pr-3 py-2.5 bg-[#FEFBF2] border border-[#EED4A8] rounded-xl text-[#451A03] font-medium focus:ring-2 focus:ring-amber-200 focus:outline-none text-xs"
@@ -72,7 +87,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({ isOpen, on
               disabled={loading}
               className="px-4 py-2.5 bg-[#B45309] hover:bg-[#92400E] text-white font-bold rounded-xl transition-colors shrink-0 flex items-center gap-1"
             >
-              {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Find Order'}
+              {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : t.findOrderBtn}
             </button>
           </form>
 
@@ -80,18 +95,22 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({ isOpen, on
           {searched && (
             <div className="space-y-3">
               {loading ? (
-                <div className="text-center py-8 text-[#92400E] font-medium">Searching for your order...</div>
+                <div className="text-center py-8 text-[#92400E] font-medium">
+                  Searching for your order...
+                </div>
               ) : !orders || orders.length === 0 ? (
                 <div className="p-6 text-center bg-[#FEF3C7] rounded-xl border border-[#FDE68A] space-y-2">
                   <p className="font-bold text-[#451A03] text-sm">No Orders Found</p>
                   <p className="text-[#78350F]">
-                    We could not find any orders matching &quot;{query}&quot;. Please verify your phone number or Order ID.
+                    We could not find any orders matching &quot;{query}&quot;. Please verify your
+                    phone number or Order ID.
                   </p>
                 </div>
               ) : (
                 <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
                   {orders.map((ord) => {
-                    const isConfirmed = ord.status === 'confirmed' || ord.status === 'dispatched';
+                    const isDispatched = ord.status === 'dispatched';
+                    const isConfirmed = ord.status === 'confirmed';
                     const isCancelled = ord.status === 'cancelled';
 
                     return (
@@ -106,7 +125,12 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({ isOpen, on
                           </div>
 
                           {/* Status Badge */}
-                          {isConfirmed ? (
+                          {isDispatched ? (
+                            <span className="px-2.5 py-1 text-[11px] font-bold bg-blue-100 text-blue-800 border border-blue-300 rounded-full flex items-center gap-1">
+                              <Truck className="w-3.5 h-3.5 text-blue-600" />
+                              Dispatched 🚚
+                            </span>
+                          ) : isConfirmed ? (
                             <span className="px-2.5 py-1 text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-full flex items-center gap-1">
                               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                               {t.confirmedStatus}
@@ -128,7 +152,9 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({ isOpen, on
                         <div className="grid grid-cols-2 gap-2 text-[11px]">
                           <div>
                             <span className="text-[#92400E] font-medium block">Customer:</span>
-                            <span className="font-bold text-[#451A03]">{ord.customerName} ({ord.phone})</span>
+                            <span className="font-bold text-[#451A03]">
+                              {ord.customerName} ({ord.phone})
+                            </span>
                           </div>
                           <div>
                             <span className="text-[#92400E] font-medium block">Order Date:</span>
@@ -142,7 +168,10 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({ isOpen, on
                         <div className="bg-[#FEFBF2] p-2.5 rounded-lg border border-[#EED4A8] space-y-1">
                           <span className="font-bold text-[#451A03] text-[11px] block">Items:</span>
                           {ord.items.map((it, idx) => (
-                            <div key={idx} className="flex justify-between text-[11px] text-[#78350F]">
+                            <div
+                              key={idx}
+                              className="flex justify-between text-[11px] text-[#78350F]"
+                            >
                               <span>
                                 {it.quantity}x {it.productName} ({it.optionLabel})
                                 {it.flavor ? ` - ${it.flavor}` : ''}
@@ -168,4 +197,3 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({ isOpen, on
     </div>
   );
 };
-

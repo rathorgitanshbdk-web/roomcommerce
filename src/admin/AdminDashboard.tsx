@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Product, Order, BulkInquiry, OrderStatus } from '../types';
 import {
   LayoutDashboard,
@@ -12,18 +12,14 @@ import {
   Edit,
   Trash2,
   Search,
-  Filter,
   DollarSign,
-  TrendingUp,
   ArrowLeft,
   Truck,
   RefreshCw,
-  UserCheck,
-  Building,
   Database,
   Copy,
   Check,
-  Server
+  Server,
 } from 'lucide-react';
 import {
   fetchProducts,
@@ -32,11 +28,17 @@ import {
   updateOrderStatus,
   fetchBulkInquiries,
   updateBulkInquiryStatus,
-  fetchStats
+  calculateStatsFromData,
+  subscribeToStoreChanges,
+  FALLBACK_IMAGES,
 } from '../services/api';
 import { AddProductModal } from './AddProductModal';
-
-import { SUPABASE_SQL_SCHEMA, getSupabase, getSupabaseCredentials, setCustomSupabaseCredentials } from '../lib/supabase';
+import {
+  SUPABASE_SQL_SCHEMA,
+  getSupabase,
+  getSupabaseCredentials,
+  setCustomSupabaseCredentials,
+} from '../lib/supabase';
 
 interface AdminDashboardProps {
   onBackToShop: () => void;
@@ -50,12 +52,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
   const [passwordInput, setPasswordInput] = useState('');
   const [loginError, setLoginError] = useState('');
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'orders' | 'products' | 'bulk' | 'database'>('overview');
+  const [activeTab, setActiveTab] = useState<
+    'overview' | 'orders' | 'products' | 'bulk' | 'database'
+  >('overview');
 
-  const [supabaseInfo, setSupabaseInfo] = useState<{ configured: boolean; supabaseUrl: string | null; pingSuccess?: boolean; pingError?: string | null; sqlSchema: string }>({
+  const [supabaseInfo, setSupabaseInfo] = useState<{
+    configured: boolean;
+    supabaseUrl: string | null;
+    pingSuccess?: boolean;
+    pingError?: string | null;
+    sqlSchema: string;
+  }>({
     configured: false,
     supabaseUrl: ((import.meta as any).env?.VITE_SUPABASE_URL as string) || null,
-    sqlSchema: SUPABASE_SQL_SCHEMA
+    sqlSchema: SUPABASE_SQL_SCHEMA,
   });
   const [copiedSchema, setCopiedSchema] = useState(false);
 
@@ -63,17 +73,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
   const [manualUrl, setManualUrl] = useState('');
   const [manualKey, setManualKey] = useState('');
   const [connectLoading, setConnectLoading] = useState(false);
-  const [connectMsg, setConnectMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-
-  // Stats state
-  const [stats, setStats] = useState<any>({
-    totalOrders: 0,
-    pendingOrders: 0,
-    confirmedOrders: 0,
-    totalRevenue: 0,
-    totalProducts: 0,
-    totalBulkInquiries: 0,
-  });
+  const [connectMsg, setConnectMsg] = useState<{
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
 
   // Orders state
   const [orders, setOrders] = useState<Order[]>([]);
@@ -92,62 +95,45 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
   const [loading, setLoading] = useState<boolean>(true);
   const [actionMessage, setActionMessage] = useState<string>('');
 
-  const loadAllData = async () => {
-    setLoading(true);
+  // Compute live overview stats in memory (0 extra network calls)
+  const stats = useMemo(
+    () => calculateStatsFromData(orders, products, bulkInquiries),
+    [orders, products, bulkInquiries]
+  );
+
+  const loadAllData = useCallback(async (background = false) => {
+    if (!background) setLoading(true);
     try {
-      const [statsRes, ordersRes, productsRes, bulkRes] = await Promise.all([
-        fetchStats(),
+      const [ordersRes, productsRes, bulkRes] = await Promise.all([
         fetchOrders(),
         fetchProducts(),
         fetchBulkInquiries(),
       ]);
 
-      setStats(statsRes);
       setOrders(ordersRes);
       setProducts(productsRes);
       setBulkInquiries(bulkRes);
 
-      let supabaseDetected = false;
-      try {
-        const supRes = await fetch('/api/supabase/status');
-        const contentType = supRes.headers.get('content-type') || '';
-        if (supRes.ok && contentType.includes('application/json')) {
-          const supData = await supRes.json();
+      const client = getSupabase();
+      const creds = getSupabaseCredentials();
+      if (client) {
+        try {
+          const { error } = await client.from('products').select('id').limit(1);
           setSupabaseInfo({
-            configured: Boolean(supData.configured),
-            supabaseUrl: supData.supabaseUrl || ((import.meta as any).env?.VITE_SUPABASE_URL as string) || null,
-            pingSuccess: supData.pingSuccess,
-            pingError: supData.pingError,
-            sqlSchema: supData.sqlSchema || SUPABASE_SQL_SCHEMA
+            configured: true,
+            supabaseUrl: creds?.url || null,
+            pingSuccess: !error,
+            pingError: error ? error.message : null,
+            sqlSchema: SUPABASE_SQL_SCHEMA,
           });
-          supabaseDetected = true;
-        }
-      } catch (e) {
-        // Fallback to client-side test
-      }
-
-      if (!supabaseDetected) {
-        const client = getSupabase();
-        const creds = getSupabaseCredentials();
-        if (client) {
-          try {
-            const { error } = await client.from('products').select('id').limit(1);
-            setSupabaseInfo({
-              configured: true,
-              supabaseUrl: creds?.url || null,
-              pingSuccess: !error,
-              pingError: error ? error.message : null,
-              sqlSchema: SUPABASE_SQL_SCHEMA
-            });
-          } catch (e: any) {
-            setSupabaseInfo({
-              configured: true,
-              supabaseUrl: creds?.url || null,
-              pingSuccess: false,
-              pingError: e?.message || 'Connection ping failed',
-              sqlSchema: SUPABASE_SQL_SCHEMA
-            });
-          }
+        } catch (e: any) {
+          setSupabaseInfo({
+            configured: true,
+            supabaseUrl: creds?.url || null,
+            pingSuccess: false,
+            pingError: e?.message || 'Connection ping failed',
+            sqlSchema: SUPABASE_SQL_SCHEMA,
+          });
         }
       }
     } catch (err) {
@@ -155,7 +141,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    loadAllData(false);
+
+    // Subscribe to instant Realtime changes from Supabase & cross-tab events
+    const unsubscribe = subscribeToStoreChanges({
+      onOrdersChange: () => {
+        fetchOrders().then(setOrders).catch(console.error);
+      },
+      onProductsChange: () => {
+        fetchProducts().then(setProducts).catch(console.error);
+      },
+      onInquiriesChange: () => {
+        fetchBulkInquiries().then(setBulkInquiries).catch(console.error);
+      },
+    });
+
+    return () => unsubscribe();
+  }, [loadAllData]);
 
   const handleDirectConnect = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -173,10 +178,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
       cleanUrl = `https://${cleanUrl}`;
     }
 
-    // Set client-side credentials & localStorage
     setCustomSupabaseCredentials(cleanUrl, cleanKey);
 
-    // Also attempt server sync if available
     try {
       await fetch('/api/supabase/connect', {
         method: 'POST',
@@ -184,10 +187,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
         body: JSON.stringify({ supabaseUrl: cleanUrl, supabaseKey: cleanKey }),
       });
     } catch {
-      // API endpoint not reachable in static mode, will test via client
+      // Static/direct client mode
     }
 
-    // Test connection via client
     try {
       const client = getSupabase();
       if (client) {
@@ -195,28 +197,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
         if (error) {
           setConnectMsg({
             type: 'error',
-            text: `Connected to Supabase, but test query returned: ${error.message}. Make sure SQL schema is executed in Supabase SQL editor.`
+            text: `Connected to Supabase, but test query returned: ${error.message}. Make sure SQL schema is executed in Supabase SQL editor.`,
           });
           setSupabaseInfo({
             configured: true,
             supabaseUrl: cleanUrl,
             pingSuccess: false,
             pingError: error.message,
-            sqlSchema: SUPABASE_SQL_SCHEMA
+            sqlSchema: SUPABASE_SQL_SCHEMA,
           });
         } else {
           setConnectMsg({
             type: 'success',
-            text: 'Successfully connected and verified Supabase database!'
+            text: 'Successfully connected and verified Supabase database!',
           });
           setSupabaseInfo({
             configured: true,
             supabaseUrl: cleanUrl,
             pingSuccess: true,
             pingError: null,
-            sqlSchema: SUPABASE_SQL_SCHEMA
+            sqlSchema: SUPABASE_SQL_SCHEMA,
           });
-          loadAllData();
+          loadAllData(false);
         }
       }
     } catch (err: any) {
@@ -226,58 +228,66 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
     }
   };
 
-  useEffect(() => {
-    loadAllData();
-  }, []);
+  // Optimistic 0ms Order Status Transitions
+  const handleOrderStatusTransition = async (
+    orderId: string,
+    newStatus: OrderStatus,
+    notificationText: string
+  ) => {
+    const previousOrders = [...orders];
+    setOrders((prev) =>
+      prev.map((o) => (o.id === orderId ? { ...o, status: newStatus } : o))
+    );
+    showNotification(notificationText);
 
-  const handleConfirmOrder = async (orderId: string) => {
     try {
-      await updateOrderStatus(orderId, 'confirmed');
-      showNotification(`Order #${orderId} CONFIRMED! Customer status updated to Green Checkmark.`);
-      loadAllData();
+      await updateOrderStatus(orderId, newStatus);
     } catch (err) {
       console.error(err);
+      setOrders(previousOrders);
+      showNotification(`Failed to update Order #${orderId}. Please try again.`);
     }
   };
 
-  const handleCancelOrder = async (orderId: string) => {
-    try {
-      await updateOrderStatus(orderId, 'cancelled');
-      showNotification(`Order #${orderId} marked as Cancelled.`);
-      loadAllData();
-    } catch (err) {
-      console.error(err);
-    }
-  };
+  const handleConfirmOrder = (orderId: string) =>
+    handleOrderStatusTransition(
+      orderId,
+      'confirmed',
+      `Order #${orderId} CONFIRMED! Customer status updated to Green Checkmark.`
+    );
 
-  const handleDispatchOrder = async (orderId: string) => {
-    try {
-      await updateOrderStatus(orderId, 'dispatched');
-      showNotification(`Order #${orderId} marked as Dispatched.`);
-      loadAllData();
-    } catch (err) {
-      console.error(err);
-    }
-  };
+  const handleCancelOrder = (orderId: string) =>
+    handleOrderStatusTransition(orderId, 'cancelled', `Order #${orderId} marked as Cancelled.`);
+
+  const handleDispatchOrder = (orderId: string) =>
+    handleOrderStatusTransition(orderId, 'dispatched', `Order #${orderId} marked as Dispatched.`);
 
   const handleDeleteProduct = async (productId: string, name: string) => {
     if (!window.confirm(`Are you sure you want to delete "${name}" from inventory?`)) return;
+    const previousProducts = [...products];
+    setProducts((prev) => prev.filter((p) => p.id !== productId));
+    showNotification(`Deleted product "${name}".`);
+
     try {
       await deleteProduct(productId);
-      showNotification(`Deleted product "${name}".`);
-      loadAllData();
     } catch (err) {
       console.error(err);
+      setProducts(previousProducts);
     }
   };
 
-  const handleUpdateBulkStatus = async (inquiryId: string, status: string) => {
+  const handleUpdateBulkStatus = async (inquiryId: string, status: any) => {
+    const previousInquiries = [...bulkInquiries];
+    setBulkInquiries((prev) =>
+      prev.map((inq) => (inq.id === inquiryId ? { ...inq, status } : inq))
+    );
+    showNotification(`Bulk Inquiry #${inquiryId} updated.`);
+
     try {
       await updateBulkInquiryStatus(inquiryId, status);
-      showNotification(`Bulk Inquiry #${inquiryId} updated.`);
-      loadAllData();
     } catch (err) {
       console.error(err);
+      setBulkInquiries(previousInquiries);
     }
   };
 
@@ -287,33 +297,37 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
   };
 
   // Filtered orders
-  const filteredOrders = orders.filter((o) => {
-    const matchesFilter =
-      orderFilter === 'all'
-        ? true
-        : orderFilter === 'pending'
-        ? o.status === 'pending_confirmation'
-        : o.status === orderFilter;
+  const filteredOrders = useMemo(() => {
+    return orders.filter((o) => {
+      const matchesFilter =
+        orderFilter === 'all'
+          ? true
+          : orderFilter === 'pending'
+          ? o.status === 'pending_confirmation'
+          : o.status === orderFilter;
 
-    const query = orderSearch.toLowerCase();
-    const matchesSearch =
-      !query ||
-      o.id.toLowerCase().includes(query) ||
-      o.customerName.toLowerCase().includes(query) ||
-      o.phone.includes(query) ||
-      o.city.toLowerCase().includes(query);
+      const query = orderSearch.toLowerCase();
+      const matchesSearch =
+        !query ||
+        o.id.toLowerCase().includes(query) ||
+        o.customerName.toLowerCase().includes(query) ||
+        o.phone.includes(query) ||
+        o.city.toLowerCase().includes(query);
 
-    return matchesFilter && matchesSearch;
-  });
+      return matchesFilter && matchesSearch;
+    });
+  }, [orders, orderFilter, orderSearch]);
 
   // Filtered products
-  const filteredProducts = products.filter(
-    (p) =>
-      !productSearch ||
-      p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
-      (p.gujaratiName && p.gujaratiName.toLowerCase().includes(productSearch.toLowerCase())) ||
-      p.category.toLowerCase().includes(productSearch.toLowerCase())
-  );
+  const filteredProducts = useMemo(() => {
+    return products.filter(
+      (p) =>
+        !productSearch ||
+        p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
+        (p.gujaratiName && p.gujaratiName.toLowerCase().includes(productSearch.toLowerCase())) ||
+        p.category.toLowerCase().includes(productSearch.toLowerCase())
+    );
+  }, [products, productSearch]);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -392,7 +406,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
             </div>
 
             <div className="text-center pt-2 text-[11px] text-slate-500">
-              Default Credentials: <code className="text-cyan-400 font-bold">admin</code> / <code className="text-cyan-400 font-bold">admin</code>
+              Default Credentials: <code className="text-cyan-400 font-bold">admin</code> /{' '}
+              <code className="text-cyan-400 font-bold">admin</code>
             </div>
           </form>
         </div>
@@ -423,8 +438,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
           </div>
 
           <div className="flex items-center gap-2">
+            <span className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/80 border border-emerald-700/50 text-emerald-300 text-[11px] font-semibold">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              Live Sync
+            </span>
+
             <button
-              onClick={loadAllData}
+              onClick={() => loadAllData(false)}
               className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center gap-1"
               title="Refresh Data"
             >
@@ -450,12 +470,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
               { id: 'overview', label: 'Overview Dashboard', icon: LayoutDashboard },
               {
                 id: 'orders',
-                label: `Orders (${stats.pendingOrders > 0 ? `${stats.pendingOrders} Pending Action` : stats.totalOrders})`,
+                label: `Orders (${
+                  stats.pendingOrders > 0 ? `${stats.pendingOrders} Pending Action` : stats.totalOrders
+                })`,
                 icon: ShoppingBag,
                 badge: stats.pendingOrders,
               },
               { id: 'products', label: `Inventory Products (${stats.totalProducts})`, icon: Package },
-              { id: 'bulk', label: `Wholesale Inquiries (${stats.totalBulkInquiries})`, icon: PhoneCall },
+              {
+                id: 'bulk',
+                label: `Wholesale Inquiries (${stats.totalBulkInquiries})`,
+                icon: PhoneCall,
+              },
               { id: 'database', label: 'Supabase Storage', icon: Database },
             ].map((tab) => {
               const Icon = tab.icon;
@@ -464,7 +490,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id as any)}
-                  className={`py-3 px-4 border-b-2 flex items-center gap-2 transition-all ${
+                  className={`py-3 px-4 border-b-2 flex items-center gap-2 transition-all whitespace-nowrap ${
                     isActive
                       ? 'border-cyan-400 text-cyan-400 bg-slate-800/50'
                       : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -500,11 +526,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-slate-400 font-semibold uppercase">Pending Owner Confirmation</p>
+                  <p className="text-xs text-slate-400 font-semibold uppercase">
+                    Pending Owner Confirmation
+                  </p>
                   <h3 className="text-2xl font-bold font-serif text-amber-400 mt-1">
                     {stats.pendingOrders}
                   </h3>
-                  <p className="text-[11px] text-amber-300/80 mt-0.5">Orders waiting for owner action</p>
+                  <p className="text-[11px] text-amber-300/80 mt-0.5">
+                    Orders waiting for owner action
+                  </p>
                 </div>
                 <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
                   <Clock className="w-6 h-6 animate-pulse" />
@@ -517,7 +547,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
                   <h3 className="text-2xl font-bold font-serif text-emerald-400 mt-1">
                     ₹{stats.totalRevenue}
                   </h3>
-                  <p className="text-[11px] text-emerald-300/80 mt-0.5">Across {stats.totalOrders} total orders</p>
+                  <p className="text-[11px] text-emerald-300/80 mt-0.5">
+                    Across {stats.totalOrders} total orders
+                  </p>
                 </div>
                 <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
                   <DollarSign className="w-6 h-6" />
@@ -539,7 +571,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
 
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-slate-400 font-semibold uppercase">Bulk & Event Inquiries</p>
+                  <p className="text-xs text-slate-400 font-semibold uppercase">
+                    Bulk & Event Inquiries
+                  </p>
                   <h3 className="text-2xl font-bold font-serif text-purple-400 mt-1">
                     {stats.totalBulkInquiries}
                   </h3>
@@ -560,7 +594,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
                     Pending Owner Confirmations Queue
                   </h3>
                   <p className="text-xs text-slate-400">
-                    Click &quot;Confirm Order&quot; below to approve the customer&apos;s request. This flips their status from Yellow Circle to Green Confirmed Checkmark.
+                    Click &quot;Confirm Order&quot; below to approve the customer&apos;s request.
+                    This flips their status from Yellow Circle to Green Confirmed Checkmark.
                   </p>
                 </div>
                 <button
@@ -595,7 +630,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
                           </div>
                           <div className="text-slate-300">
                             <strong>Items ({ord.items.length}):</strong>{' '}
-                            {ord.items.map((i) => `${i.quantity}x ${i.productName} (${i.optionLabel})`).join(', ')}
+                            {ord.items
+                              .map((i) => `${i.quantity}x ${i.productName} (${i.optionLabel})`)
+                              .join(', ')}
                           </div>
                           <div className="text-slate-400">
                             Address: {ord.address}, {ord.city} ({ord.pincode})
@@ -729,7 +766,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
                         <div className="space-y-1 bg-slate-950/60 p-3 rounded-xl border border-slate-800/80">
                           <p className="font-bold text-slate-200">Customer Details:</p>
-                          <p className="text-white font-serif text-sm font-bold">{ord.customerName}</p>
+                          <p className="text-white font-serif text-sm font-bold">
+                            {ord.customerName}
+                          </p>
                           <p className="text-slate-300 font-mono">📱 {ord.phone}</p>
                           {ord.email && <p className="text-slate-400">✉️ {ord.email}</p>}
                         </div>
@@ -737,8 +776,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
                         <div className="space-y-1 bg-slate-950/60 p-3 rounded-xl border border-slate-800/80">
                           <p className="font-bold text-slate-200">Shipping Address:</p>
                           <p className="text-slate-300 leading-relaxed">{ord.address}</p>
-                          <p className="text-slate-400">{ord.city}, Pincode: {ord.pincode}</p>
-                          {ord.notes && <p className="text-amber-400 italic">Note: {ord.notes}</p>}
+                          <p className="text-slate-400">
+                            {ord.city}, Pincode: {ord.pincode}
+                          </p>
+                          {ord.notes && (
+                            <p className="text-amber-400 italic">Note: {ord.notes}</p>
+                          )}
                         </div>
 
                         <div className="space-y-1.5 bg-slate-950/60 p-3 rounded-xl border border-slate-800/80">
@@ -751,6 +794,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
                               <span className="font-bold text-slate-200">₹{it.totalPrice}</span>
                             </div>
                           ))}
+                          {ord.deliveryFee > 0 && (
+                            <div className="flex justify-between text-[11px] text-slate-400">
+                              <span>Delivery Fee:</span>
+                              <span>₹{ord.deliveryFee}</span>
+                            </div>
+                          )}
                           <div className="pt-1 border-t border-slate-800 flex justify-between font-bold text-sm text-emerald-400">
                             <span>Total Payable:</span>
                             <span>₹{ord.totalAmount}</span>
@@ -832,6 +881,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
                     <img
                       src={prod.imageUrl}
                       alt={prod.name}
+                      loading="lazy"
+                      decoding="async"
+                      onError={(e) => {
+                        const target = e.currentTarget;
+                        const fallback =
+                          FALLBACK_IMAGES[prod.category] || FALLBACK_IMAGES.default;
+                        if (target.src !== fallback) {
+                          target.src = fallback;
+                        }
+                      }}
                       className="w-20 h-20 object-cover rounded-xl bg-slate-950 border border-slate-800 shrink-0"
                     />
 
@@ -839,7 +898,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
                       <span className="text-[10px] uppercase font-bold text-cyan-400 bg-cyan-950 px-2 py-0.5 rounded border border-cyan-800">
                         {prod.category}
                       </span>
-                      <h4 className="font-serif font-bold text-white text-sm line-clamp-1">{prod.name}</h4>
+                      <h4 className="font-serif font-bold text-white text-sm line-clamp-1">
+                        {prod.name}
+                      </h4>
                       {prod.gujaratiName && (
                         <p className="text-xs text-slate-400 font-serif">{prod.gujaratiName}</p>
                       )}
@@ -868,7 +929,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
                   <div className="flex items-center justify-between pt-2 border-t border-slate-800 text-xs">
                     <span
                       className={`font-bold text-[10px] px-2 py-0.5 rounded ${
-                        prod.inStock ? 'bg-emerald-950 text-emerald-400' : 'bg-red-950 text-red-400'
+                        prod.inStock
+                          ? 'bg-emerald-950 text-emerald-400'
+                          : 'bg-red-950 text-red-400'
                       }`}
                     >
                       {prod.inStock ? 'In Stock' : 'Out of Stock'}
@@ -904,7 +967,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
         {/* TAB 4: BULK INQUIRIES */}
         {activeTab === 'bulk' && (
           <div className="space-y-4">
-            <h3 className="font-serif font-bold text-lg text-white">Wholesale & Wedding Catering Requests</h3>
+            <h3 className="font-serif font-bold text-lg text-white">
+              Wholesale & Wedding Catering Requests
+            </h3>
 
             {bulkInquiries.length === 0 ? (
               <div className="p-12 text-center bg-slate-900 border border-slate-800 rounded-2xl text-slate-400">
@@ -913,10 +978,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
             ) : (
               <div className="space-y-3">
                 {bulkInquiries.map((inq) => (
-                  <div key={inq.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+                  <div
+                    key={inq.id}
+                    className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3"
+                  >
                     <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                       <div className="flex items-center gap-2">
-                        <span className="font-mono font-bold text-xs text-purple-400">#{inq.id}</span>
+                        <span className="font-mono font-bold text-xs text-purple-400">
+                          #{inq.id}
+                        </span>
                         <span className="font-serif font-bold text-white text-sm">{inq.name}</span>
                         <span className="text-slate-400 text-xs">📱 {inq.phone}</span>
                       </div>
@@ -943,7 +1013,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
                         <span className="text-cyan-400 font-bold">{inq.expectedQuantity}</span>
                       </div>
                       <div>
-                        <span className="text-slate-400 block font-semibold">Products Interested:</span>
+                        <span className="text-slate-400 block font-semibold">
+                          Products Interested:
+                        </span>
                         <span className="text-slate-300">{inq.productsInterested.join(', ')}</span>
                       </div>
                     </div>
@@ -974,17 +1046,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
                       Supabase Cloud Storage Integration
                     </h2>
                     <p className="text-xs text-slate-400">
-                      Store customer details, orders, products, reviews, and wholesale inquiries in a production PostgreSQL database.
+                      Store customer details, orders, products, reviews, and wholesale inquiries in
+                      a production PostgreSQL database.
                     </p>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <span className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 ${
-                    supabaseInfo?.configured 
-                      ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' 
-                      : 'bg-amber-950 text-amber-300 border border-amber-800'
-                  }`}>
+                  <span
+                    className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 ${
+                      supabaseInfo?.configured
+                        ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                        : 'bg-amber-950 text-amber-300 border border-amber-800'
+                    }`}
+                  >
                     <Server className="w-3.5 h-3.5" />
                     {supabaseInfo?.configured ? 'Connected to Supabase' : 'Waiting for Credentials'}
                   </span>
@@ -1006,14 +1081,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
 
                   {supabaseInfo.pingSuccess ? (
                     <div className="p-2.5 bg-emerald-900/40 border border-emerald-700/50 rounded-lg text-emerald-200 text-xs">
-                      ✅ <b>Database Table Ping Succeeded!</b> Your Supabase database is active, and tables are responding.
+                      ✅ <b>Database Table Ping Succeeded!</b> Your Supabase database is active, and
+                      tables are responding.
                     </div>
                   ) : (
                     <div className="p-2.5 bg-amber-950/80 border border-amber-800/60 rounded-lg text-amber-200 text-xs space-y-1">
                       <div className="font-bold text-amber-300">⚠️ Table Ping Warning:</div>
                       <p>{supabaseInfo.pingError || 'Could not query "products" table.'}</p>
                       <p className="text-[11px] text-amber-300/80">
-                        <b>Fix:</b> Please copy the SQL Script below and run it in your <b>Supabase SQL Editor</b> tab to create the required tables.
+                        <b>Fix:</b> Please copy the SQL Script below and run it in your{' '}
+                        <b>Supabase SQL Editor</b> tab to create the required tables.
                       </p>
                     </div>
                   )}
@@ -1025,7 +1102,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
                     Supabase Credentials Not Yet Active
                   </div>
                   <p className="text-slate-300">
-                    Enter your Supabase Project URL and API Key in the form below to connect directly, or configure Environment Variables in AI Studio Settings.
+                    Enter your Supabase Project URL and API Key in the form below to connect
+                    directly, or configure Environment Variables in AI Studio Settings.
                   </p>
                 </div>
               )}
@@ -1039,7 +1117,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
                       Option A: Connect Supabase Directly (Instant Setup)
                     </h3>
                     <p className="text-xs text-slate-400 mt-0.5">
-                      Paste your Project URL & Key here to connect immediately without waiting for environment re-deployments.
+                      Paste your Project URL & Key here to connect immediately without waiting for
+                      environment re-deployments.
                     </p>
                   </div>
                 </div>
@@ -1074,11 +1153,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
                   </div>
 
                   {connectMsg && (
-                    <div className={`p-3 rounded-lg border text-xs ${
-                      connectMsg.type === 'success' 
-                        ? 'bg-emerald-950/80 border-emerald-800 text-emerald-200' 
-                        : 'bg-rose-950/80 border-rose-800 text-rose-200'
-                    }`}>
+                    <div
+                      className={`p-3 rounded-lg border text-xs ${
+                        connectMsg.type === 'success'
+                          ? 'bg-emerald-950/80 border-emerald-800 text-emerald-200'
+                          : 'bg-rose-950/80 border-rose-800 text-rose-200'
+                      }`}
+                    >
                       {connectMsg.text}
                     </div>
                   )}
@@ -1105,34 +1186,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
                 </form>
               </div>
 
-              {/* Troubleshooting Breakdown */}
-              <div className="p-5 bg-slate-950/60 border border-slate-800/80 rounded-xl space-y-3 text-xs">
-                <h3 className="font-bold text-amber-400 flex items-center gap-2 text-sm">
-                  <Clock className="w-4 h-4 text-amber-400" />
-                  Option B: Environment Variables Breakdown & Troubleshooting
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-slate-300 leading-relaxed">
-                  <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-lg space-y-1.5">
-                    <div className="font-bold text-cyan-300">1. Environment Target Selection in Settings</div>
-                    <p className="text-[11px] text-slate-400">
-                      In the AI Studio Settings Environment Variables tab, check the <b>Environments</b> dropdown. You MUST check <b>Development</b> in addition to Production & Preview. If <i>Development</i> is unchecked, the active live preview container won't receive the variables.
-                    </p>
-                  </div>
-
-                  <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-lg space-y-1.5">
-                    <div className="font-bold text-cyan-300">2. Supabase SQL Schema Table Creation</div>
-                    <p className="text-[11px] text-slate-400">
-                      Supabase requires tables to exist before accepting reads/writes. If the URL and Key are set but tables haven't been created, queries will fail. Copy the SQL script below and paste it into your <b>Supabase SQL Editor</b>.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
               {/* SQL Schema Copy Block */}
               <div className="space-y-2 pt-2">
                 <div className="flex items-center justify-between">
                   <h3 className="font-bold text-xs text-slate-200 flex items-center gap-2">
-                    <span>Database Tables DDL Script (run in Supabase SQL Editor)</span>
+                    <span>
+                      Database Tables, Indexes, Realtime & RLS Script (run in Supabase SQL Editor)
+                    </span>
                   </h3>
                   <button
                     onClick={() => {
@@ -1175,7 +1235,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
         onSuccess={() => {
           setIsAddProductOpen(false);
           showNotification('Product saved successfully to store catalog!');
-          loadAllData();
+          loadAllData(true);
         }}
       />
     </div>

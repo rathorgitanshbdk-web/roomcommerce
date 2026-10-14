@@ -2,6 +2,7 @@ import React from 'react';
 import { CartItem } from '../types';
 import { X, Trash2, ShoppingBag, ArrowRight, Truck } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
+import { FALLBACK_IMAGES, resolveProductImage } from '../services/api';
 
 interface CartDrawerProps {
   isOpen: boolean;
@@ -36,7 +37,9 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
         <div className="p-4 bg-[#78350F] text-[#FEF3C7] flex items-center justify-between border-b border-[#92400E]">
           <div className="flex items-center gap-2">
             <ShoppingBag className="w-5 h-5 text-[#F59E0B]" />
-            <h2 className="font-serif font-bold text-base">🛒 {t.cartTitle} • {items.length} {t.itemsInCart}</h2>
+            <h2 className="font-serif font-bold text-base">
+              🛒 {t.cartTitle} • {items.length} {t.itemsInCart}
+            </h2>
           </div>
           <button
             onClick={onClose}
@@ -79,7 +82,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
               <ShoppingBag className="w-12 h-12 mx-auto text-[#D97706] opacity-60" />
               <p className="font-serif font-bold text-base text-[#451A03]">{t.emptyCart}</p>
               <p className="text-xs max-w-xs mx-auto">
-                Explore our authentic Khakhra, Bandhani Hing, and Surti Farshan to add delicious snacks!
+                Explore our authentic Khakhra, Bandhani Hing, and Surti Farshan to add delicious
+                snacks!
               </p>
             </div>
           ) : (
@@ -89,8 +93,17 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                 className="flex gap-3 p-3 bg-white rounded-xl border border-[#EED4A8] relative group shadow-xs"
               >
                 <img
-                  src={item.imageUrl}
+                  src={resolveProductImage(item.imageUrl, item.category)}
                   alt={item.productName}
+                  loading="lazy"
+                  decoding="async"
+                  onError={(e) => {
+                    const target = e.currentTarget;
+                    const fallback = FALLBACK_IMAGES[item.category] || FALLBACK_IMAGES.default;
+                    if (target.src !== fallback) {
+                      target.src = fallback;
+                    }
+                  }}
                   className="w-16 h-16 object-cover rounded-xl bg-[#FEFBF2] border border-[#EED4A8] shrink-0"
                 />
 
@@ -109,9 +122,14 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                   </div>
 
                   <div className="text-[11px] text-[#92400E] space-y-0.5 font-medium">
-                    <div>Size: <span className="font-bold text-[#78350F]">{item.selectedOption.label}</span></div>
+                    <div>
+                      Size: <span className="font-bold text-[#78350F]">{item.selectedOption.label}</span>
+                    </div>
                     {item.selectedFlavor && (
-                      <div>{t.flavorLabel} <span className="font-bold text-[#78350F]">{item.selectedFlavor}</span></div>
+                      <div>
+                        {t.flavorLabel}{' '}
+                        <span className="font-bold text-[#78350F]">{item.selectedFlavor}</span>
+                      </div>
                     )}
                   </div>
 
@@ -184,4 +202,3 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
     </div>
   );
 };
-

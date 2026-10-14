@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Order } from '../types';
 import { X, CheckCircle2, Clock, AlertCircle, RefreshCw, Copy, Check } from 'lucide-react';
-import { trackOrder } from '../services/api';
+import { trackOrder, subscribeToStoreChanges } from '../services/api';
 import { useLanguage } from '../context/LanguageContext';
 
 interface OrderConfirmationModalProps {
@@ -9,7 +9,10 @@ interface OrderConfirmationModalProps {
   onClose: () => void;
 }
 
-export const OrderConfirmationModal: React.FC<OrderConfirmationModalProps> = ({ order: initialOrder, onClose }) => {
+export const OrderConfirmationModal: React.FC<OrderConfirmationModalProps> = ({
+  order: initialOrder,
+  onClose,
+}) => {
   const { t } = useLanguage();
 
   const [currentOrder, setCurrentOrder] = useState<Order | null>(initialOrder);
@@ -22,37 +25,50 @@ export const OrderConfirmationModal: React.FC<OrderConfirmationModalProps> = ({ 
     }
   }, [initialOrder]);
 
-  // Poll server for live status updates every 4 seconds
-  useEffect(() => {
-    let interval: any;
-    if (currentOrder && currentOrder.status === 'pending_confirmation') {
-      interval = setInterval(async () => {
-        try {
-          const results = await trackOrder(currentOrder.id);
-          if (results && results.length > 0) {
-            setCurrentOrder(results[0]);
-          }
-        } catch (err) {
-          console.error('Error polling order status:', err);
-        }
-      }, 4000);
+  const fetchLatestOrderState = useCallback(async (orderId: string) => {
+    try {
+      const results = await trackOrder(orderId);
+      if (results && results.length > 0) {
+        const exact = results.find((r) => r.id === orderId) || results[0];
+        setCurrentOrder(exact);
+      }
+    } catch (err) {
+      console.error('Error refreshing order status:', err);
     }
-    return () => clearInterval(interval);
-  }, [currentOrder?.id, currentOrder?.status]);
+  }, []);
+
+  // Instant Supabase Realtime WebSocket subscription + fallback poll
+  useEffect(() => {
+    if (!currentOrder?.id) return;
+    const orderId = currentOrder.id;
+
+    const unsubscribe = subscribeToStoreChanges({
+      onOrdersChange: () => {
+        fetchLatestOrderState(orderId);
+      },
+    });
+
+    let interval: any;
+    if (currentOrder.status === 'pending_confirmation') {
+      interval = setInterval(() => {
+        fetchLatestOrderState(orderId);
+      }, 6000);
+    }
+
+    return () => {
+      unsubscribe();
+      if (interval) clearInterval(interval);
+    };
+  }, [currentOrder?.id, currentOrder?.status, fetchLatestOrderState]);
 
   if (!initialOrder || !currentOrder) return null;
 
   const handleManualRefresh = async () => {
     setIsRefreshing(true);
     try {
-      const results = await trackOrder(currentOrder.id);
-      if (results && results.length > 0) {
-        setCurrentOrder(results[0]);
-      }
-    } catch (err) {
-      console.error(err);
+      await fetchLatestOrderState(currentOrder.id);
     } finally {
-      setTimeout(() => setIsRefreshing(false), 500);
+      setTimeout(() => setIsRefreshing(false), 350);
     }
   };
 
@@ -62,20 +78,23 @@ export const OrderConfirmationModal: React.FC<OrderConfirmationModalProps> = ({ 
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const isConfirmed = currentOrder.status === 'confirmed' || currentOrder.status === 'dispatched';
+  const isConfirmed =
+    currentOrder.status === 'confirmed' || currentOrder.status === 'dispatched';
   const isCancelled = currentOrder.status === 'cancelled';
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
       <div className="bg-[#FFFDF9] w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden border border-[#EED4A8] relative my-8">
         {/* Modal Top Accent Header */}
-        <div className={`p-6 text-center ${
-          isConfirmed 
-            ? 'bg-gradient-to-b from-emerald-800 to-emerald-900 text-emerald-50' 
-            : isCancelled 
-            ? 'bg-gradient-to-b from-red-800 to-red-900 text-red-50'
-            : 'bg-gradient-to-b from-[#78350F] to-[#451A03] text-[#FEF3C7]'
-        }`}>
+        <div
+          className={`p-6 text-center ${
+            isConfirmed
+              ? 'bg-gradient-to-b from-emerald-800 to-emerald-900 text-emerald-50'
+              : isCancelled
+              ? 'bg-gradient-to-b from-red-800 to-red-900 text-red-50'
+              : 'bg-gradient-to-b from-[#78350F] to-[#451A03] text-[#FEF3C7]'
+          }`}
+        >
           <button
             onClick={onClose}
             className="absolute top-3 right-3 p-1.5 rounded-full text-white/80 hover:bg-white/10 transition-colors"
@@ -96,7 +115,10 @@ export const OrderConfirmationModal: React.FC<OrderConfirmationModalProps> = ({ 
             ) : (
               /* Yellow / Amber Uncheck Circular Status */
               <div className="w-20 h-20 rounded-full bg-[#FEF3C7]/20 border-4 border-[#FDE68A] flex items-center justify-center text-[#FDE68A] shadow-xl relative">
-                <Clock className="w-10 h-10 text-[#FDE68A] animate-spin" style={{ animationDuration: '6s' }} />
+                <Clock
+                  className="w-10 h-10 text-[#FDE68A] animate-spin"
+                  style={{ animationDuration: '6s' }}
+                />
                 <span className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-[#F59E0B] text-[#451A03] font-bold text-xs flex items-center justify-center border-2 border-[#78350F]">
                   !
                 </span>
@@ -115,9 +137,19 @@ export const OrderConfirmationModal: React.FC<OrderConfirmationModalProps> = ({ 
 
           {/* ORDER ID BADGE */}
           <div className="inline-flex items-center gap-2 mt-3 px-3 py-1 bg-black/30 rounded-full text-xs font-mono font-bold tracking-wider text-[#FDE68A] border border-white/20">
-            <span>{t.orderId}: {currentOrder.id}</span>
-            <button onClick={copyOrderId} className="hover:text-white transition-colors" title="Copy Order ID">
-              {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+            <span>
+              {t.orderId}: {currentOrder.id}
+            </span>
+            <button
+              onClick={copyOrderId}
+              className="hover:text-white transition-colors"
+              title="Copy Order ID"
+            >
+              {copied ? (
+                <Check className="w-3.5 h-3.5 text-emerald-400" />
+              ) : (
+                <Copy className="w-3.5 h-3.5" />
+              )}
             </button>
           </div>
         </div>
@@ -129,11 +161,9 @@ export const OrderConfirmationModal: React.FC<OrderConfirmationModalProps> = ({ 
             <div className="p-3 bg-[#FEF3C7] border border-[#FDE68A] rounded-xl space-y-1 text-[#451A03]">
               <div className="font-bold text-[#78350F] flex items-center gap-1.5 text-xs">
                 <Clock className="w-4 h-4 text-[#D97706]" />
-                Awaiting Store Confirmation:
+                {t.awaitingConfirmation}
               </div>
-              <p className="text-[11px] leading-relaxed text-[#78350F]">
-                Your order is safely registered in our system! The owner of Giriraj Farshan is reviewing item stock and will click <strong className="text-[#451A03]">&quot;Confirm Order&quot;</strong> in the admin panel. No online payment is required right now.
-              </p>
+              <p className="text-[11px] leading-relaxed text-[#78350F]">{t.awaitingDesc}</p>
             </div>
           )}
 
@@ -144,7 +174,8 @@ export const OrderConfirmationModal: React.FC<OrderConfirmationModalProps> = ({ 
                 Great News! Your Order is Approved:
               </div>
               <p className="text-[11px] leading-relaxed text-emerald-900/90">
-                The owner has verified your farshan & hing items and confirmed the order! Preparation is underway. Fresh dispatch will occur shortly.
+                The owner has verified your farshan & hing items and confirmed the order!
+                Preparation is underway. Fresh dispatch will occur shortly.
               </p>
             </div>
           )}
@@ -152,7 +183,7 @@ export const OrderConfirmationModal: React.FC<OrderConfirmationModalProps> = ({ 
           {/* Customer Summary */}
           <div className="bg-[#FEFBF2] p-3 rounded-xl border border-[#EED4A8] space-y-2">
             <h4 className="font-bold text-[#451A03] text-xs border-b border-[#EED4A8] pb-1">
-              Customer & Shipping Details
+              {t.customerDetails}
             </h4>
             <div className="grid grid-cols-2 gap-2 text-[11px]">
               <div>
@@ -165,24 +196,37 @@ export const OrderConfirmationModal: React.FC<OrderConfirmationModalProps> = ({ 
               </div>
               <div className="col-span-2">
                 <span className="text-[#92400E] font-medium block">{t.fullAddress}:</span>
-                <span className="font-medium text-[#451A03]">{currentOrder.address}, {currentOrder.city} ({currentOrder.pincode})</span>
+                <span className="font-medium text-[#451A03]">
+                  {currentOrder.address}, {currentOrder.city} ({currentOrder.pincode})
+                </span>
               </div>
             </div>
           </div>
 
           {/* Items Summary */}
           <div className="space-y-1.5">
-            <h4 className="font-bold text-[#451A03] text-xs">Ordered Items ({currentOrder.items.length}):</h4>
+            <h4 className="font-bold text-[#451A03] text-xs">
+              Ordered Items ({currentOrder.items.length}):
+            </h4>
             <div className="bg-[#FEFBF2] border border-[#EED4A8] rounded-xl p-2.5 max-h-36 overflow-y-auto space-y-1.5">
               {currentOrder.items.map((it, idx) => (
-                <div key={idx} className="flex justify-between items-center text-[11px] pb-1 border-b border-[#EED4A8] last:border-0">
+                <div
+                  key={idx}
+                  className="flex justify-between items-center text-[11px] pb-1 border-b border-[#EED4A8] last:border-0"
+                >
                   <div>
                     <span className="font-bold text-[#451A03]">{it.productName}</span>
                     <span className="text-[#D97706] font-medium ml-1">({it.optionLabel})</span>
-                    {it.flavor && <span className="text-[#92400E] font-medium block text-[10px]">{t.flavorLabel} {it.flavor}</span>}
+                    {it.flavor && (
+                      <span className="text-[#92400E] font-medium block text-[10px]">
+                        {t.flavorLabel} {it.flavor}
+                      </span>
+                    )}
                   </div>
                   <div className="text-right">
-                    <span className="text-[#92400E]">{it.quantity} x ₹{it.unitPrice}</span>
+                    <span className="text-[#92400E]">
+                      {it.quantity} x ₹{it.unitPrice}
+                    </span>
                     <span className="font-bold text-[#78350F] block">₹{it.totalPrice}</span>
                   </div>
                 </div>
@@ -205,7 +249,7 @@ export const OrderConfirmationModal: React.FC<OrderConfirmationModalProps> = ({ 
                 className="flex-1 py-2.5 bg-[#B45309] hover:bg-[#92400E] text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-colors"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
-                Check Owner Confirmation Status
+                {t.checkStatusBtn}
               </button>
             )}
 
@@ -213,7 +257,7 @@ export const OrderConfirmationModal: React.FC<OrderConfirmationModalProps> = ({ 
               onClick={onClose}
               className="px-4 py-2.5 bg-[#FEF3C7] hover:bg-[#FDE68A] text-[#78350F] font-bold rounded-xl text-xs transition-colors border border-[#EED4A8]"
             >
-              Close & Keep Browsing
+              {t.closeBtn}
             </button>
           </div>
         </div>
@@ -221,4 +265,3 @@ export const OrderConfirmationModal: React.FC<OrderConfirmationModalProps> = ({ 
     </div>
   );
 };
-

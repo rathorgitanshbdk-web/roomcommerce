@@ -1,15 +1,25 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Product, WeightPriceOption } from '../types';
 import { Star, ShoppingCart, Check, Info } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
+import { FALLBACK_IMAGES, resolveProductImage } from '../services/api';
 
 interface ProductCardProps {
   product: Product;
-  onAddToCart: (product: Product, option: WeightPriceOption, flavor: string | undefined, quantity: number) => void;
+  onAddToCart: (
+    product: Product,
+    option: WeightPriceOption,
+    flavor: string | undefined,
+    quantity: number
+  ) => void;
   onOpenDetails: (product: Product) => void;
 }
 
-export const ProductCard: React.FC<ProductCardProps> = ({ product, onAddToCart, onOpenDetails }) => {
+export const ProductCard: React.FC<ProductCardProps> = ({
+  product,
+  onAddToCart,
+  onOpenDetails,
+}) => {
   const { t } = useLanguage();
 
   // Default selected weight/packet option
@@ -21,6 +31,13 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onAddToCart, 
   const [selectedFlavor, setSelectedFlavor] = useState<string | undefined>(
     product.flavors && product.flavors.length > 0 ? product.flavors[0] : undefined
   );
+
+  useEffect(() => {
+    setSelectedOption(product.options[0] || { id: 'default', label: 'Standard', price: 100 });
+    setSelectedFlavor(
+      product.flavors && product.flavors.length > 0 ? product.flavors[0] : undefined
+    );
+  }, [product]);
 
   // Selected quantity
   const [quantity, setQuantity] = useState<number>(1);
@@ -35,6 +52,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onAddToCart, 
   };
 
   const currentTotalPrice = selectedOption.price * quantity;
+  const displayImageUrl = resolveProductImage(product.imageUrl, product.category);
 
   return (
     <div className="group bg-[#FFFDF9] rounded-2xl border border-[#EED4A8] shadow-xs hover:shadow-xl hover:border-[#D97706] transition-all duration-300 flex flex-col justify-between overflow-hidden relative">
@@ -53,13 +71,22 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onAddToCart, 
       </div>
 
       {/* Image Container */}
-      <div 
+      <div
         className="relative aspect-[4/3] bg-[#FEFBF2] overflow-hidden cursor-pointer"
         onClick={() => onOpenDetails(product)}
       >
         <img
-          src={product.imageUrl}
+          src={displayImageUrl}
           alt={product.name}
+          loading="lazy"
+          decoding="async"
+          onError={(e) => {
+            const target = e.currentTarget;
+            const fallback = FALLBACK_IMAGES[product.category] || FALLBACK_IMAGES.default;
+            if (target.src !== fallback) {
+              target.src = fallback;
+            }
+          }}
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3">
@@ -89,7 +116,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onAddToCart, 
           </div>
 
           {/* Product Name */}
-          <h3 
+          <h3
             onClick={() => onOpenDetails(product)}
             className="font-serif font-bold text-[#451A03] text-base sm:text-lg group-hover:text-[#D97706] transition-colors line-clamp-1 cursor-pointer"
           >
@@ -130,7 +157,11 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onAddToCart, 
                     }`}
                   >
                     <div className="truncate">{opt.label}</div>
-                    <div className={isSelected ? 'text-[#D97706] text-[10px]' : 'text-gray-500 text-[10px]'}>
+                    <div
+                      className={
+                        isSelected ? 'text-[#D97706] text-[10px]' : 'text-gray-500 text-[10px]'
+                      }
+                    >
                       ₹{opt.price}
                     </div>
                   </button>

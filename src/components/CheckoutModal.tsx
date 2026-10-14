@@ -72,6 +72,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         items: orderItems,
         subtotal,
         deliveryFee,
+        totalAmount,
         notes: notes.trim(),
       });
 
@@ -107,7 +108,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         </div>
 
         {/* Modal Body Form */}
-        <form onSubmit={handleSubmit} className="p-5 space-y-4 text-xs">
+        <form onSubmit={handleSubmit} className="p-5 space-y-4 text-xs overflow-y-auto">
           {errorMessage && (
             <div className="p-3 bg-red-50 text-red-800 border border-red-200 rounded-xl font-medium">
               ⚠️ {errorMessage}
@@ -186,7 +187,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block font-bold text-[#451A03] mb-1">City / Town</label>
+              <label className="block font-bold text-[#451A03] mb-1">{t.city}</label>
               <input
                 type="text"
                 required
@@ -197,7 +198,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             </div>
 
             <div>
-              <label className="block font-bold text-[#451A03] mb-1">Pincode</label>
+              <label className="block font-bold text-[#451A03] mb-1">{t.pincode}</label>
               <input
                 type="text"
                 required
@@ -242,7 +243,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             <ShieldCheck className="w-4 h-4 text-[#F59E0B] shrink-0 mt-0.5" />
             <div>
               <span className="font-bold text-[#FDE68A] block">Notice on Order Confirmation:</span>
-              When you click &quot;Place Order&quot;, your status will initially show &quot;{t.unconfirmedStatus}&quot;. The store owner will review and confirm your order from the Admin panel!
+              When you click &quot;{t.placeOrderBtn}&quot;, your status will initially show &quot;{t.unconfirmedStatus}&quot;. The store owner will review and confirm your order from the Admin panel!
             </div>
           </div>
 
@@ -251,7 +252,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             disabled={isSubmitting}
             className="w-full py-3.5 bg-[#065F46] hover:bg-[#047857] text-white font-bold text-sm rounded-2xl shadow-md transition-all flex items-center justify-center gap-2"
           >
-            {isSubmitting ? 'Submitting Order...' : t.placeOrderBtn}
+            {isSubmitting ? t.placingOrder : t.placeOrderBtn}
             <ArrowRight className="w-4 h-4" />
           </button>
         </form>
@@ -259,4 +260,3 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     </div>
   );
 };
-

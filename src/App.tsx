@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Product, CartItem, WeightPriceOption, Order } from './types';
 import { Header } from './components/Header';
 import { HeroSection } from './components/HeroSection';
@@ -12,8 +12,12 @@ import { BulkOrderSection } from './components/BulkOrderSection';
 import { ReviewsSection } from './components/ReviewsSection';
 import { Footer } from './components/Footer';
 import { AdminDashboard } from './admin/AdminDashboard';
-import { fetchProducts } from './services/api';
-import { INITIAL_PRODUCTS } from './data/initialData';
+import {
+  fetchProducts,
+  getCachedProducts,
+  filterProductsClientSide,
+  subscribeToStoreChanges,
+} from './services/api';
 import { ShoppingBag } from 'lucide-react';
 import { useLanguage } from './context/LanguageContext';
 
@@ -57,9 +61,12 @@ export default function App() {
     }
   };
 
-  // Products & Filters State
-  const [products, setProducts] = useState<Product[]>([]);
-  const [loadingProducts, setLoadingProducts] = useState<boolean>(true);
+  // Master Product List (Initialized from localStorage cache for 0ms first paint)
+  const [allProducts, setAllProducts] = useState<Product[]>(() => getCachedProducts() || []);
+  const [loadingProducts, setLoadingProducts] = useState<boolean>(() => {
+    const cached = getCachedProducts();
+    return cached === null;
+  });
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
@@ -88,23 +95,44 @@ export default function App() {
   const [isTrackOrderOpen, setIsTrackOrderOpen] = useState<boolean>(false);
   const [placedOrderForModal, setPlacedOrderForModal] = useState<Order | null>(null);
 
-  // Load products from API / Supabase
-  const loadProducts = async () => {
-    setLoadingProducts(true);
+  // Load full product catalog from Supabase and keep synced in real time
+  const loadProducts = useCallback(async (background = false) => {
+    if (!background && allProducts.length === 0) {
+      setLoadingProducts(true);
+    }
     try {
-      const list = await fetchProducts(activeCategory, searchQuery);
-      setProducts(list && list.length > 0 ? list : INITIAL_PRODUCTS);
+      const list = await fetchProducts();
+      setAllProducts(list);
     } catch (err) {
       console.error('Error fetching products:', err);
-      setProducts(INITIAL_PRODUCTS);
     } finally {
       setLoadingProducts(false);
     }
-  };
+  }, [allProducts.length]);
 
   useEffect(() => {
-    loadProducts();
-  }, [activeCategory, searchQuery]);
+    loadProducts(allProducts.length > 0);
+
+    const unsubscribe = subscribeToStoreChanges({
+      onProductsChange: () => {
+        loadProducts(true);
+      },
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Re-sync when switching back from Admin to Shop
+  useEffect(() => {
+    if (currentView === 'shop') {
+      loadProducts(true);
+    }
+  }, [currentView]);
+
+  // 0ms Instant Client-Side Filtering (Fixes Empty Category Bug & Search Lag)
+  const filteredProducts = useMemo(() => {
+    return filterProductsClientSide(allProducts, activeCategory, searchQuery);
+  }, [allProducts, activeCategory, searchQuery]);
 
   // Cart Operations
   const handleAddToCart = (
@@ -214,7 +242,7 @@ export default function App() {
       />
 
       {/* Main Catalog Grid */}
-      <main id="products-grid" className="max-w-7xl mx-auto px-4 sm:px-6 py-10 flex-1 space-y-6">
+      <main id="products-grid" className="max-w-7xl mx-auto px-4 sm:px-6 py-10 flex-1 space-y-6 w-full">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#EED4A8] pb-4">
           <div>
             <span className="text-xs font-bold text-[#92400E] uppercase tracking-wider bg-[#FEF3C7] px-3 py-1 rounded-full border border-[#FDE68A]">
@@ -225,7 +253,7 @@ export default function App() {
             </h2>
           </div>
           <p className="text-xs text-[#92400E] font-medium">
-            {t.showingItems} ({products.length})
+            {t.showingItems} ({filteredProducts.length})
           </p>
         </div>
 
@@ -235,26 +263,28 @@ export default function App() {
               <div key={n} className="h-80 bg-[#FEF3C7]/40 rounded-2xl animate-pulse border border-[#EED4A8]" />
             ))}
           </div>
-        ) : products.length === 0 ? (
+        ) : filteredProducts.length === 0 ? (
           <div className="p-12 text-center bg-[#FFFDF9] rounded-2xl border border-[#EED4A8] space-y-3">
             <ShoppingBag className="w-10 h-10 text-[#D97706] mx-auto" />
             <h3 className="font-serif font-bold text-lg text-[#451A03]">{t.noMatchTitle}</h3>
             <p className="text-xs text-[#92400E]">
               {t.noMatchDesc}
             </p>
-            <button
-              onClick={() => {
-                setActiveCategory('all');
-                setSearchQuery('');
-              }}
-              className="px-4 py-2 bg-[#B45309] hover:bg-[#92400E] text-white font-bold text-xs rounded-xl transition-colors"
-            >
-              {t.resetFilters}
-            </button>
+            {(activeCategory !== 'all' || searchQuery) && (
+              <button
+                onClick={() => {
+                  setActiveCategory('all');
+                  setSearchQuery('');
+                }}
+                className="px-4 py-2 bg-[#B45309] hover:bg-[#92400E] text-white font-bold text-xs rounded-xl transition-colors"
+              >
+                {t.resetFilters}
+              </button>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {products.map((product) => (
+            {filteredProducts.map((product) => (
               <ProductCard
                 key={product.id}
                 product={product}
