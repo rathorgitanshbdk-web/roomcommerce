@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Product, CartItem, WeightPriceOption, Order } from './types';
+import { Product, CartItem, Order } from './types';
 import { Header } from './components/Header';
 import { HeroSection } from './components/HeroSection';
 import { ProductCard } from './components/ProductCard';
@@ -17,6 +17,7 @@ import {
   getCachedProducts,
   filterProductsClientSide,
   subscribeToStoreChanges,
+  calculateProductOfferPricing,
 } from './services/api';
 import { ShoppingBag } from 'lucide-react';
 import { useLanguage } from './context/LanguageContext';
@@ -73,7 +74,7 @@ export default function App() {
   // Cart State (Persisted in localStorage)
   const [cartItems, setCartItems] = useState<CartItem[]>(() => {
     try {
-      const saved = localStorage.getItem('giriraj_cart');
+      const saved = localStorage.getItem('giriraj_cart_v2');
       return saved ? JSON.parse(saved) : [];
     } catch {
       return [];
@@ -82,7 +83,7 @@ export default function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem('giriraj_cart', JSON.stringify(cartItems));
+      localStorage.setItem('giriraj_cart_v2', JSON.stringify(cartItems));
     } catch (e) {
       console.error(e);
     }
@@ -96,19 +97,22 @@ export default function App() {
   const [placedOrderForModal, setPlacedOrderForModal] = useState<Order | null>(null);
 
   // Load full product catalog from Supabase and keep synced in real time
-  const loadProducts = useCallback(async (background = false) => {
-    if (!background && allProducts.length === 0) {
-      setLoadingProducts(true);
-    }
-    try {
-      const list = await fetchProducts();
-      setAllProducts(list);
-    } catch (err) {
-      console.error('Error fetching products:', err);
-    } finally {
-      setLoadingProducts(false);
-    }
-  }, [allProducts.length]);
+  const loadProducts = useCallback(
+    async (background = false) => {
+      if (!background && allProducts.length === 0) {
+        setLoadingProducts(true);
+      }
+      try {
+        const list = await fetchProducts();
+        setAllProducts(list);
+      } catch (err) {
+        console.error('Error fetching products:', err);
+      } finally {
+        setLoadingProducts(false);
+      }
+    },
+    [allProducts.length]
+  );
 
   useEffect(() => {
     loadProducts(allProducts.length > 0);
@@ -129,43 +133,84 @@ export default function App() {
     }
   }, [currentView]);
 
-  // 0ms Instant Client-Side Filtering (Fixes Empty Category Bug & Search Lag)
+  // Keep cart item prices & offer splits synchronized with live product stock/offers
+  useEffect(() => {
+    if (allProducts.length === 0 || cartItems.length === 0) return;
+    setCartItems((prev) =>
+      prev
+        .map((item) => {
+          const prod = allProducts.find((p) => p.id === item.productId);
+          if (!prod) return item;
+          if (!prod.inStock || prod.stockQuantity <= 0) return null;
+          const cappedQty = Math.min(item.quantity, prod.stockQuantity);
+          const calc = calculateProductOfferPricing(prod, cappedQty);
+          return {
+            ...item,
+            quantity: cappedQty,
+            unitPrice: calc.regularUnitPrice,
+            offerUnitPrice: calc.hasActiveOffer ? calc.offerUnitPrice : undefined,
+            offerUnitsApplied: calc.offerUnitsApplied,
+            regularUnitsApplied: calc.regularUnitsApplied,
+            discountSaved: calc.discountSaved,
+            totalPrice: calc.totalPrice,
+            imageUrl: prod.imageUrl,
+          };
+        })
+        .filter(Boolean) as CartItem[]
+    );
+  }, [allProducts]);
+
+  // 0ms Instant Client-Side Filtering
   const filteredProducts = useMemo(() => {
     return filterProductsClientSide(allProducts, activeCategory, searchQuery);
   }, [allProducts, activeCategory, searchQuery]);
 
-  // Cart Operations
+  // Cart Operations (No Weight Options; Supports Partial Offer Splits & Stock Caps)
   const handleAddToCart = (
     product: Product,
-    option: WeightPriceOption,
     flavor: string | undefined,
     quantity: number
   ) => {
-    const cartItemId = `${product.id}-${option.id}-${flavor || 'plain'}`;
+    if (!product.inStock || product.stockQuantity <= 0) return;
+    const cartItemId = `${product.id}-${flavor || 'standard'}`;
 
     setCartItems((prev) => {
       const existingIndex = prev.findIndex((i) => i.cartItemId === cartItemId);
       if (existingIndex > -1) {
         const updated = [...prev];
-        const newQty = updated[existingIndex].quantity + quantity;
+        const newQty = Math.min(
+          product.stockQuantity,
+          updated[existingIndex].quantity + quantity
+        );
+        const calc = calculateProductOfferPricing(product, newQty);
         updated[existingIndex] = {
           ...updated[existingIndex],
           quantity: newQty,
-          totalPrice: newQty * option.price,
+          unitPrice: calc.regularUnitPrice,
+          offerUnitPrice: calc.hasActiveOffer ? calc.offerUnitPrice : undefined,
+          offerUnitsApplied: calc.offerUnitsApplied,
+          regularUnitsApplied: calc.regularUnitsApplied,
+          discountSaved: calc.discountSaved,
+          totalPrice: calc.totalPrice,
         };
         return updated;
       } else {
+        const cappedQty = Math.min(product.stockQuantity, quantity);
+        const calc = calculateProductOfferPricing(product, cappedQty);
         const newItem: CartItem = {
           cartItemId,
           productId: product.id,
           productName: product.name,
           gujaratiName: product.gujaratiName,
           category: product.category,
-          selectedOption: option,
           selectedFlavor: flavor,
-          quantity,
-          unitPrice: option.price,
-          totalPrice: option.price * quantity,
+          quantity: cappedQty,
+          unitPrice: calc.regularUnitPrice,
+          offerUnitPrice: calc.hasActiveOffer ? calc.offerUnitPrice : undefined,
+          offerUnitsApplied: calc.offerUnitsApplied,
+          regularUnitsApplied: calc.regularUnitsApplied,
+          discountSaved: calc.discountSaved,
+          totalPrice: calc.totalPrice,
           imageUrl: product.imageUrl,
         };
         return [...prev, newItem];
@@ -181,10 +226,26 @@ export default function App() {
     setCartItems((prev) =>
       prev.map((item) => {
         if (item.cartItemId === cartItemId) {
+          const prod = allProducts.find((p) => p.id === item.productId);
+          const maxStock = prod ? prod.stockQuantity : 999;
+          const cappedQty = Math.min(maxStock, newQty);
+          if (prod) {
+            const calc = calculateProductOfferPricing(prod, cappedQty);
+            return {
+              ...item,
+              quantity: cappedQty,
+              unitPrice: calc.regularUnitPrice,
+              offerUnitPrice: calc.hasActiveOffer ? calc.offerUnitPrice : undefined,
+              offerUnitsApplied: calc.offerUnitsApplied,
+              regularUnitsApplied: calc.regularUnitsApplied,
+              discountSaved: calc.discountSaved,
+              totalPrice: calc.totalPrice,
+            };
+          }
           return {
             ...item,
-            quantity: newQty,
-            totalPrice: newQty * item.unitPrice,
+            quantity: cappedQty,
+            totalPrice: cappedQty * item.unitPrice,
           };
         }
         return item;
@@ -201,7 +262,8 @@ export default function App() {
     setCartItems([]); // Clear cart
     setIsCheckoutOpen(false);
     setIsCartOpen(false);
-    setPlacedOrderForModal(createdOrder); // Opens Order Confirmation Modal with yellow circle clock status!
+    setPlacedOrderForModal(createdOrder);
+    loadProducts(true); // Immediately refresh stock & offer counters on storefront
   };
 
   // Render Admin Dashboard if view is admin
@@ -242,7 +304,10 @@ export default function App() {
       />
 
       {/* Main Catalog Grid */}
-      <main id="products-grid" className="max-w-7xl mx-auto px-4 sm:px-6 py-10 flex-1 space-y-6 w-full">
+      <main
+        id="products-grid"
+        className="max-w-7xl mx-auto px-4 sm:px-6 py-10 flex-1 space-y-6 w-full"
+      >
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#EED4A8] pb-4">
           <div>
             <span className="text-xs font-bold text-[#92400E] uppercase tracking-wider bg-[#FEF3C7] px-3 py-1 rounded-full border border-[#FDE68A]">
@@ -260,16 +325,17 @@ export default function App() {
         {loadingProducts ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 py-12">
             {[1, 2, 3, 4].map((n) => (
-              <div key={n} className="h-80 bg-[#FEF3C7]/40 rounded-2xl animate-pulse border border-[#EED4A8]" />
+              <div
+                key={n}
+                className="h-80 bg-[#FEF3C7]/40 rounded-2xl animate-pulse border border-[#EED4A8]"
+              />
             ))}
           </div>
         ) : filteredProducts.length === 0 ? (
           <div className="p-12 text-center bg-[#FFFDF9] rounded-2xl border border-[#EED4A8] space-y-3">
             <ShoppingBag className="w-10 h-10 text-[#D97706] mx-auto" />
             <h3 className="font-serif font-bold text-lg text-[#451A03]">{t.noMatchTitle}</h3>
-            <p className="text-xs text-[#92400E]">
-              {t.noMatchDesc}
-            </p>
+            <p className="text-xs text-[#92400E]">{t.noMatchDesc}</p>
             {(activeCategory !== 'all' || searchQuery) && (
               <button
                 onClick={() => {
@@ -313,15 +379,12 @@ export default function App() {
       />
 
       {/* Modals & Drawers */}
-
-      {/* Product Specification & Reviews Modal */}
       <ProductDetailModal
         product={selectedProductForDetail}
         onClose={() => setSelectedProductForDetail(null)}
         onAddToCart={handleAddToCart}
       />
 
-      {/* Slide-over Cart Drawer */}
       <CartDrawer
         isOpen={isCartOpen}
         onClose={() => setIsCartOpen(false)}
@@ -331,7 +394,6 @@ export default function App() {
         onProceedToCheckout={() => setIsCheckoutOpen(true)}
       />
 
-      {/* Checkout Form Modal */}
       <CheckoutModal
         isOpen={isCheckoutOpen}
         onClose={() => setIsCheckoutOpen(false)}
@@ -339,13 +401,11 @@ export default function App() {
         onOrderSuccess={handleOrderSuccess}
       />
 
-      {/* Order Confirmation Modal with Yellow Circle Clock Status */}
       <OrderConfirmationModal
         order={placedOrderForModal}
         onClose={() => setPlacedOrderForModal(null)}
       />
 
-      {/* Order Status Tracking Modal */}
       <OrderTrackerModal
         isOpen={isTrackOrderOpen}
         onClose={() => setIsTrackOrderOpen(false)}

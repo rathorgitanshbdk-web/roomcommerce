@@ -135,9 +135,11 @@ async function syncFromSupabase() {
         reviewCount: Number(p.review_count || 0),
         isBestSeller: Boolean(p.is_bestseller),
         inStock: p.in_stock !== undefined ? Boolean(p.in_stock) : true,
+        price: Number(p.price ?? (safeJsonParse(p.options, [])[0]?.price) ?? 100),
+        stockQuantity: Number(p.stock_quantity ?? p.stockQuantity ?? (safeJsonParse(p.options, [])[0]?.stockQuantity) ?? 50),
+        offer: p.offer ?? (safeJsonParse(p.options, [])[0]?.offer) ?? undefined,
         options: safeJsonParse(p.options, []),
         flavors: safeJsonParse(p.flavors, []),
-        saleType: p.sale_type || 'weight',
       }));
     }
 
@@ -231,7 +233,7 @@ async function saveProductToSupabase(product: Product) {
       in_stock: product.inStock ?? true,
       options: product.options,
       flavors: product.flavors || [],
-      sale_type: product.saleType || 'weight',
+      sale_type: 'unit',
     });
     if (error) {
       console.error('Failed to upsert product to Supabase:', error.message || error);
@@ -493,8 +495,10 @@ apiRouter.post('/products', async (req, res) => {
       reviewCount: Number(body.reviewCount) || 0,
       inStock: body.inStock ?? true,
       isBestSeller: Boolean(body.isBestSeller),
-      saleType: body.saleType || 'weight',
-      options: body.options || [],
+      price: Number(body.price) || 100,
+      stockQuantity: body.stockQuantity !== undefined ? Number(body.stockQuantity) : 50,
+      offer: body.offer || undefined,
+      options: body.options || [{ id: 'standard', label: 'Standard', price: Number(body.price) || 100, stockQuantity: body.stockQuantity !== undefined ? Number(body.stockQuantity) : 50, offer: body.offer }],
     };
 
     store.products = [newProduct, ...store.products.filter((p) => p.id !== newProduct.id)];

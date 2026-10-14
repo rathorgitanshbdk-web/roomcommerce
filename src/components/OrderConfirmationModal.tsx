@@ -37,7 +37,6 @@ export const OrderConfirmationModal: React.FC<OrderConfirmationModalProps> = ({
     }
   }, []);
 
-  // Instant Supabase Realtime WebSocket subscription + fallback poll
   useEffect(() => {
     if (!currentOrder?.id) return;
     const orderId = currentOrder.id;
@@ -113,7 +112,6 @@ export const OrderConfirmationModal: React.FC<OrderConfirmationModalProps> = ({
                 <AlertCircle className="w-12 h-12 text-red-300" />
               </div>
             ) : (
-              /* Yellow / Amber Uncheck Circular Status */
               <div className="w-20 h-20 rounded-full bg-[#FEF3C7]/20 border-4 border-[#FDE68A] flex items-center justify-center text-[#FDE68A] shadow-xl relative">
                 <Clock
                   className="w-10 h-10 text-[#FDE68A] animate-spin"
@@ -156,7 +154,6 @@ export const OrderConfirmationModal: React.FC<OrderConfirmationModalProps> = ({
 
         {/* Modal Body Info */}
         <div className="p-5 space-y-4 text-xs">
-          {/* Status Explanation Banner */}
           {!isConfirmed && !isCancelled && (
             <div className="p-3 bg-[#FEF3C7] border border-[#FDE68A] rounded-xl space-y-1 text-[#451A03]">
               <div className="font-bold text-[#78350F] flex items-center gap-1.5 text-xs">
@@ -209,35 +206,54 @@ export const OrderConfirmationModal: React.FC<OrderConfirmationModalProps> = ({
               Ordered Items ({currentOrder.items.length}):
             </h4>
             <div className="bg-[#FEFBF2] border border-[#EED4A8] rounded-xl p-2.5 max-h-36 overflow-y-auto space-y-1.5">
-              {currentOrder.items.map((it, idx) => (
-                <div
-                  key={idx}
-                  className="flex justify-between items-center text-[11px] pb-1 border-b border-[#EED4A8] last:border-0"
-                >
-                  <div>
-                    <span className="font-bold text-[#451A03]">{it.productName}</span>
-                    <span className="text-[#D97706] font-medium ml-1">({it.optionLabel})</span>
-                    {it.flavor && (
-                      <span className="text-[#92400E] font-medium block text-[10px]">
-                        {t.flavorLabel} {it.flavor}
-                      </span>
-                    )}
+              {currentOrder.items.map((it, idx) => {
+                const isPartial =
+                  (it.offerUnitsApplied || 0) > 0 && (it.regularUnitsApplied || 0) > 0;
+                return (
+                  <div
+                    key={idx}
+                    className="flex justify-between items-center text-[11px] pb-1 border-b border-[#EED4A8] last:border-0"
+                  >
+                    <div>
+                      <span className="font-bold text-[#451A03]">{it.productName}</span>
+                      {it.flavor && (
+                        <span className="text-[#92400E] font-medium block text-[10px]">
+                          {t.flavorLabel} {it.flavor}
+                        </span>
+                      )}
+                      {isPartial ? (
+                        <span className="text-[10px] text-amber-800 block">
+                          {it.offerUnitsApplied} @ ₹{it.offerUnitPrice} (Offer) +{' '}
+                          {it.regularUnitsApplied} @ ₹{it.unitPrice} (Regular)
+                        </span>
+                      ) : (it.offerUnitsApplied || 0) > 0 ? (
+                        <span className="text-[10px] text-emerald-700 font-bold block">
+                          Offer Price: ₹{it.offerUnitPrice}/unit
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[#92400E]">Qty: {it.quantity}</span>
+                      <span className="font-bold text-[#78350F] block">₹{it.totalPrice}</span>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <span className="text-[#92400E]">
-                      {it.quantity} x ₹{it.unitPrice}
-                    </span>
-                    <span className="font-bold text-[#78350F] block">₹{it.totalPrice}</span>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
           {/* Price Breakdown */}
-          <div className="flex justify-between font-serif font-bold text-sm text-[#451A03] p-3 bg-[#FEF3C7] rounded-xl border border-[#FDE68A]">
-            <span>{t.totalPayable}:</span>
-            <span className="text-[#78350F]">₹{currentOrder.totalAmount}</span>
+          <div className="p-3 bg-[#FEF3C7] rounded-xl border border-[#FDE68A] space-y-1">
+            {currentOrder.couponCode && (currentOrder.couponDiscount || 0) > 0 && (
+              <div className="flex justify-between text-xs font-bold text-emerald-800">
+                <span>Coupon Applied ({currentOrder.couponCode}):</span>
+                <span>-₹{currentOrder.couponDiscount}</span>
+              </div>
+            )}
+            <div className="flex justify-between font-serif font-bold text-sm text-[#451A03]">
+              <span>{t.totalPayable}:</span>
+              <span className="text-[#78350F]">₹{currentOrder.totalAmount}</span>
+            </div>
           </div>
 
           {/* Action Footer */}

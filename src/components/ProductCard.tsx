@@ -1,17 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { Product, WeightPriceOption } from '../types';
-import { Star, ShoppingCart, Check, Info } from 'lucide-react';
+import { Product } from '../types';
+import { Star, ShoppingCart, Check, Info, Tag, PackageCheck, Zap } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
-import { FALLBACK_IMAGES, resolveProductImage } from '../services/api';
+import {
+  FALLBACK_IMAGES,
+  resolveProductImage,
+  calculateProductOfferPricing,
+} from '../services/api';
 
 interface ProductCardProps {
   product: Product;
-  onAddToCart: (
-    product: Product,
-    option: WeightPriceOption,
-    flavor: string | undefined,
-    quantity: number
-  ) => void;
+  onAddToCart: (product: Product, flavor: string | undefined, quantity: number) => void;
   onOpenDetails: (product: Product) => void;
 }
 
@@ -22,50 +21,77 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 }) => {
   const { t } = useLanguage();
 
-  // Default selected weight/packet option
-  const [selectedOption, setSelectedOption] = useState<WeightPriceOption>(
-    product.options[0] || { id: 'default', label: 'Standard', price: 100 }
-  );
-
   // Selected flavor if product has flavors
   const [selectedFlavor, setSelectedFlavor] = useState<string | undefined>(
     product.flavors && product.flavors.length > 0 ? product.flavors[0] : undefined
   );
 
   useEffect(() => {
-    setSelectedOption(product.options[0] || { id: 'default', label: 'Standard', price: 100 });
     setSelectedFlavor(
       product.flavors && product.flavors.length > 0 ? product.flavors[0] : undefined
     );
   }, [product]);
 
-  // Selected quantity
+  // Selected quantity (capped by stockQuantity)
   const [quantity, setQuantity] = useState<number>(1);
-
-  // Added animation state
   const [isAdded, setIsAdded] = useState<boolean>(false);
 
+  const maxStock = Math.max(0, Number(product.stockQuantity) || 0);
+  const isAvailable = product.inStock && maxStock > 0;
+
+  useEffect(() => {
+    if (maxStock > 0 && quantity > maxStock) {
+      setQuantity(maxStock);
+    }
+  }, [maxStock, quantity]);
+
+  const pricing = calculateProductOfferPricing(product, quantity);
+  const singleUnitPricing = calculateProductOfferPricing(product, 1);
+
   const handleAdd = () => {
-    onAddToCart(product, selectedOption, selectedFlavor, quantity);
+    if (!isAvailable) return;
+    onAddToCart(product, selectedFlavor, quantity);
     setIsAdded(true);
     setTimeout(() => setIsAdded(false), 1800);
   };
 
-  const currentTotalPrice = selectedOption.price * quantity;
   const displayImageUrl = resolveProductImage(product.imageUrl, product.category);
+
+  // Live Offer Badge Text based on Admin's chosen badgeMode ('claimed' vs 'left')
+  const offerBadgeText =
+    pricing.hasActiveOffer && product.offer
+      ? product.offer.badgeMode === 'claimed'
+        ? `🔥 Special Offer: ${product.offer.unitsSold}/${product.offer.unitLimit} claimed`
+        : `🔥 Special Offer: ${pricing.remainingOfferUnits} units left`
+      : null;
+
+  const discountLabel =
+    pricing.hasActiveOffer && product.offer
+      ? product.offer.discountType === 'percentage'
+        ? `${product.offer.discountValue}% OFF`
+        : `₹${product.offer.discountValue} OFF`
+      : null;
 
   return (
     <div className="group bg-[#FFFDF9] rounded-2xl border border-[#EED4A8] shadow-xs hover:shadow-xl hover:border-[#D97706] transition-all duration-300 flex flex-col justify-between overflow-hidden relative">
       {/* Top Badges */}
-      <div className="absolute top-3 left-3 z-10 flex flex-col gap-1.5">
-        {product.isBestSeller && (
-          <span className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider bg-[#B45309] text-white rounded-full shadow-md">
-            🔥 Best Seller
-          </span>
-        )}
-        {product.isPureGujarati && (
-          <span className="px-2.5 py-0.5 text-[10px] font-bold bg-[#FEF3C7] text-[#78350F] border border-[#FDE68A] rounded-full">
-            અસલી વાનગી
+      <div className="absolute top-3 left-3 right-3 z-10 flex items-start justify-between gap-1.5 pointer-events-none">
+        <div className="flex flex-col gap-1.5">
+          {offerBadgeText && (
+            <span className="px-2.5 py-1 text-[10px] font-extrabold bg-gradient-to-r from-red-600 to-amber-600 text-white rounded-full shadow-md flex items-center gap-1">
+              {offerBadgeText}
+            </span>
+          )}
+          {product.isBestSeller && (
+            <span className="px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-[#B45309] text-white rounded-full shadow-md w-fit">
+              ⭐ Best Seller
+            </span>
+          )}
+        </div>
+
+        {discountLabel && (
+          <span className="px-2.5 py-1 text-[10px] font-extrabold bg-emerald-600 text-white rounded-full shadow-md">
+            {discountLabel}
           </span>
         )}
       </div>
@@ -99,7 +125,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
       {/* Body Content */}
       <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
         <div>
-          {/* Rating & Review trigger */}
+          {/* Rating & Stock Status Bar */}
           <div className="flex items-center justify-between text-xs mb-1.5">
             <button
               onClick={() => onOpenDetails(product)}
@@ -110,9 +136,22 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               <span className="text-[#92400E] font-normal">({product.reviewCount})</span>
             </button>
 
-            <span className="text-[11px] font-bold text-[#92400E] uppercase tracking-wide">
-              {product.saleType === 'weight' ? 'By Weight' : 'By Packet'}
-            </span>
+            {isAvailable ? (
+              <span
+                className={`text-[10px] font-bold px-2 py-0.5 rounded-full border flex items-center gap-1 ${
+                  maxStock <= 10
+                    ? 'bg-amber-100 text-amber-900 border-amber-300'
+                    : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                }`}
+              >
+                <PackageCheck className="w-3 h-3" />
+                {maxStock <= 10 ? `Only ${maxStock} left!` : `${maxStock} in stock`}
+              </span>
+            ) : (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-800 border border-red-200">
+                Out of Stock
+              </span>
+            )}
           </div>
 
           {/* Product Name */}
@@ -135,42 +174,33 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           </p>
         </div>
 
-        {/* Dynamic Selectors */}
+        {/* Price, Flavor & Quantity Controls */}
         <div className="space-y-2.5 pt-2 border-t border-[#EED4A8]">
-          {/* 1. Weight / Packet Option Pills */}
-          <div>
-            <label className="block text-[11px] font-bold uppercase text-[#92400E] mb-1">
-              {t.chooseWeight}
-            </label>
-            <div className="grid grid-cols-3 gap-1.5">
-              {product.options.map((opt) => {
-                const isSelected = selectedOption.id === opt.id;
-                return (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => setSelectedOption(opt)}
-                    className={`px-1.5 py-1.5 text-xs rounded-xl font-bold border text-center transition-all ${
-                      isSelected
-                        ? 'bg-[#FEF3C7] text-[#78350F] border-2 border-[#D97706] shadow-xs'
-                        : 'bg-white text-[#92400E] border-[#EED4A8] hover:bg-[#FEF3C7]/50'
-                    }`}
-                  >
-                    <div className="truncate">{opt.label}</div>
-                    <div
-                      className={
-                        isSelected ? 'text-[#D97706] text-[10px]' : 'text-gray-500 text-[10px]'
-                      }
-                    >
-                      ₹{opt.price}
-                    </div>
-                  </button>
-                );
-              })}
+          {/* Unit Price Display */}
+          <div className="flex items-center justify-between bg-[#FEFBF2] px-3 py-2 rounded-xl border border-[#EED4A8]">
+            <span className="text-[11px] font-bold text-[#92400E] flex items-center gap-1">
+              <Tag className="w-3.5 h-3.5 text-[#D97706]" />
+              Unit Price:
+            </span>
+            <div className="flex items-center gap-2">
+              {singleUnitPricing.hasActiveOffer ? (
+                <>
+                  <span className="text-xs text-stone-400 line-through font-medium">
+                    ₹{singleUnitPricing.regularUnitPrice}
+                  </span>
+                  <span className="font-serif font-bold text-base text-emerald-700">
+                    ₹{singleUnitPricing.offerUnitPrice}
+                  </span>
+                </>
+              ) : (
+                <span className="font-serif font-bold text-base text-[#78350F]">
+                  ₹{singleUnitPricing.regularUnitPrice}
+                </span>
+              )}
             </div>
           </div>
 
-          {/* 2. Flavor Dropdown (if applicable) */}
+          {/* Flavor Dropdown (if applicable) */}
           {product.flavors && product.flavors.length > 0 && (
             <div>
               <label className="block text-[11px] font-bold uppercase text-[#92400E] mb-1">
@@ -190,40 +220,68 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             </div>
           )}
 
-          {/* 3. Quantity Counter & Price Display */}
+          {/* Partial Offer Split Notice when quantity > remainingOfferUnits */}
+          {pricing.isPartialOfferSplit && (
+            <div className="p-2 rounded-xl bg-amber-50 border border-amber-300 text-[10px] text-amber-950 leading-snug space-y-0.5">
+              <div className="font-bold flex items-center gap-1 text-amber-800">
+                <Zap className="w-3 h-3 text-amber-600 shrink-0" />
+                Only {pricing.remainingOfferUnits} offer unit(s) left!
+              </div>
+              <div>
+                <strong>{pricing.offerUnitsApplied}</strong> @ ₹{pricing.offerUnitPrice} (Offer) +{' '}
+                <strong>{pricing.regularUnitsApplied}</strong> @ ₹{pricing.regularUnitPrice}{' '}
+                (Regular)
+              </div>
+            </div>
+          )}
+
+          {/* Quantity Counter & Total Price Display */}
           <div className="flex items-center justify-between pt-1">
             <div className="flex items-center gap-1.5 bg-[#FEFBF2] border border-[#EED4A8] rounded-xl p-1">
               <button
+                type="button"
                 onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-                className="w-6 h-6 rounded-lg bg-white text-[#78350F] font-bold hover:bg-[#FEF3C7] flex items-center justify-center transition-colors text-sm border border-[#EED4A8]"
+                disabled={!isAvailable || quantity <= 1}
+                className="w-6 h-6 rounded-lg bg-white text-[#78350F] font-bold hover:bg-[#FEF3C7] disabled:opacity-40 flex items-center justify-center transition-colors text-sm border border-[#EED4A8]"
               >
                 -
               </button>
               <span className="w-6 text-center text-xs font-bold text-[#451A03]">{quantity}</span>
               <button
-                onClick={() => setQuantity((q) => q + 1)}
-                className="w-6 h-6 rounded-lg bg-white text-[#78350F] font-bold hover:bg-[#FEF3C7] flex items-center justify-center transition-colors text-sm border border-[#EED4A8]"
+                type="button"
+                onClick={() => setQuantity((q) => Math.min(maxStock, q + 1))}
+                disabled={!isAvailable || quantity >= maxStock}
+                className="w-6 h-6 rounded-lg bg-white text-[#78350F] font-bold hover:bg-[#FEF3C7] disabled:opacity-40 flex items-center justify-center transition-colors text-sm border border-[#EED4A8]"
               >
                 +
               </button>
             </div>
 
             <div className="text-right">
-              <span className="text-[10px] text-gray-500 block uppercase font-bold">Total Price</span>
-              <span className="font-serif text-xl font-bold text-[#78350F]">
-                ₹{currentTotalPrice}
+              <span className="text-[10px] text-gray-500 block uppercase font-bold">
+                Total ({quantity} {quantity === 1 ? 'unit' : 'units'})
               </span>
+              <div className="flex items-center justify-end gap-1.5">
+                {pricing.discountSaved > 0 && (
+                  <span className="text-xs text-stone-400 line-through">
+                    ₹{pricing.regularUnitPrice * quantity}
+                  </span>
+                )}
+                <span className="font-serif text-xl font-bold text-[#78350F]">
+                  ₹{pricing.totalPrice}
+                </span>
+              </div>
             </div>
           </div>
 
           {/* Add to Cart Button */}
           <button
             onClick={handleAdd}
-            disabled={!product.inStock}
+            disabled={!isAvailable}
             className={`w-full py-3 px-3 rounded-2xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all shadow-md active:scale-98 ${
               isAdded
                 ? 'bg-emerald-700 text-white'
-                : product.inStock
+                : isAvailable
                 ? 'bg-[#B45309] hover:bg-[#92400E] text-white shadow-amber-900/10'
                 : 'bg-gray-200 text-gray-500 cursor-not-allowed'
             }`}
@@ -232,7 +290,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               <>
                 <Check className="w-4 h-4 animate-bounce" /> {t.addedToCart}!
               </>
-            ) : product.inStock ? (
+            ) : isAvailable ? (
               <>
                 <ShoppingCart className="w-4 h-4" /> {t.addToCart}
               </>

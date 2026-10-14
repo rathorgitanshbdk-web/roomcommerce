@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Product, Order, BulkInquiry, OrderStatus } from '../types';
+import { Product, Order, BulkInquiry, OrderStatus, Coupon, DiscountType } from '../types';
 import {
   LayoutDashboard,
   Package,
@@ -20,6 +20,10 @@ import {
   Copy,
   Check,
   Server,
+  Ticket,
+  Sparkles,
+  Flame,
+  RotateCcw,
 } from 'lucide-react';
 import {
   fetchProducts,
@@ -28,7 +32,12 @@ import {
   updateOrderStatus,
   fetchBulkInquiries,
   updateBulkInquiryStatus,
+  fetchCoupons,
+  createCoupon,
+  updateCoupon,
+  deleteCoupon,
   calculateStatsFromData,
+  calculateProductOfferPricing,
   subscribeToStoreChanges,
   FALLBACK_IMAGES,
 } from '../services/api';
@@ -53,7 +62,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
   const [loginError, setLoginError] = useState('');
 
   const [activeTab, setActiveTab] = useState<
-    'overview' | 'orders' | 'products' | 'bulk' | 'database'
+    'overview' | 'orders' | 'products' | 'coupons' | 'bulk' | 'database'
   >('overview');
 
   const [supabaseInfo, setSupabaseInfo] = useState<{
@@ -89,13 +98,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isAddProductOpen, setIsAddProductOpen] = useState<boolean>(false);
 
+  // Coupons state & Creator Form
+  const [coupons, setCoupons] = useState<Coupon[]>([]);
+  const [newCouponCode, setNewCouponCode] = useState('');
+  const [newCouponType, setNewCouponType] = useState<DiscountType>('flat');
+  const [newCouponValue, setNewCouponValue] = useState<number>(100);
+  const [newCouponMinCart, setNewCouponMinCart] = useState<number>(499);
+  const [newCouponMaxUses, setNewCouponMaxUses] = useState<number>(20);
+  const [creatingCoupon, setCreatingCoupon] = useState(false);
+  const [copiedCouponId, setCopiedCouponId] = useState<string | null>(null);
+
   // Bulk inquiries state
   const [bulkInquiries, setBulkInquiries] = useState<BulkInquiry[]>([]);
 
   const [loading, setLoading] = useState<boolean>(true);
   const [actionMessage, setActionMessage] = useState<string>('');
 
-  // Compute live overview stats in memory (0 extra network calls)
+  // Compute live overview stats in memory
   const stats = useMemo(
     () => calculateStatsFromData(orders, products, bulkInquiries),
     [orders, products, bulkInquiries]
@@ -104,15 +123,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
   const loadAllData = useCallback(async (background = false) => {
     if (!background) setLoading(true);
     try {
-      const [ordersRes, productsRes, bulkRes] = await Promise.all([
+      const [ordersRes, productsRes, bulkRes, couponsRes] = await Promise.all([
         fetchOrders(),
         fetchProducts(),
         fetchBulkInquiries(),
+        fetchCoupons(),
       ]);
 
       setOrders(ordersRes);
       setProducts(productsRes);
       setBulkInquiries(bulkRes);
+      setCoupons(couponsRes);
 
       const client = getSupabase();
       const creds = getSupabaseCredentials();
@@ -146,16 +167,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
   useEffect(() => {
     loadAllData(false);
 
-    // Subscribe to instant Realtime changes from Supabase & cross-tab events
     const unsubscribe = subscribeToStoreChanges({
       onOrdersChange: () => {
         fetchOrders().then(setOrders).catch(console.error);
+        fetchProducts().then(setProducts).catch(console.error);
+        fetchCoupons().then(setCoupons).catch(console.error);
       },
       onProductsChange: () => {
         fetchProducts().then(setProducts).catch(console.error);
       },
       onInquiriesChange: () => {
         fetchBulkInquiries().then(setBulkInquiries).catch(console.error);
+      },
+      onCouponsChange: () => {
+        fetchCoupons().then(setCoupons).catch(console.error);
       },
     });
 
@@ -228,7 +253,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
     }
   };
 
-  // Optimistic 0ms Order Status Transitions
+  // Optimistic 0ms Order Status Transitions (Restores Stock & Offer Units on Cancel!)
   const handleOrderStatusTransition = async (
     orderId: string,
     newStatus: OrderStatus,
@@ -242,6 +267,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
 
     try {
       await updateOrderStatus(orderId, newStatus);
+      if (newStatus === 'cancelled') {
+        const [freshProducts, freshCoupons] = await Promise.all([
+          fetchProducts(),
+          fetchCoupons(),
+        ]);
+        setProducts(freshProducts);
+        setCoupons(freshCoupons);
+      }
     } catch (err) {
       console.error(err);
       setOrders(previousOrders);
@@ -257,7 +290,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
     );
 
   const handleCancelOrder = (orderId: string) =>
-    handleOrderStatusTransition(orderId, 'cancelled', `Order #${orderId} marked as Cancelled.`);
+    handleOrderStatusTransition(
+      orderId,
+      'cancelled',
+      `Order #${orderId} Cancelled! Product stock, offer units & coupon uses restored.`
+    );
 
   const handleDispatchOrder = (orderId: string) =>
     handleOrderStatusTransition(orderId, 'dispatched', `Order #${orderId} marked as Dispatched.`);
@@ -289,6 +326,74 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
       console.error(err);
       setBulkInquiries(previousInquiries);
     }
+  };
+
+  // Coupon Management Handlers
+  const handleAutoGenerateCode = () => {
+    const prefixes = ['GIRIRAJ', 'SWAGATAM', 'FARSHAN', 'ROYAL', 'FESTIVE'];
+    const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
+    const suffix = Math.floor(10 + Math.random() * 90);
+    setNewCouponCode(`${prefix}${newCouponValue || suffix}`);
+  };
+
+  const handleCreateCoupon = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanCode = newCouponCode.trim().toUpperCase().replace(/\s+/g, '');
+    if (!cleanCode) {
+      showNotification('Please enter or generate a Coupon Code.');
+      return;
+    }
+
+    setCreatingCoupon(true);
+    try {
+      const created = await createCoupon({
+        code: cleanCode,
+        discountType: newCouponType,
+        discountValue: Math.max(1, Number(newCouponValue) || 50),
+        minCartValue: Math.max(0, Number(newCouponMinCart) || 0),
+        maxUses: Math.max(1, Number(newCouponMaxUses) || 10),
+        usedCount: 0,
+        isActive: true,
+      });
+      setCoupons((prev) => [
+        created,
+        ...prev.filter((c) => c.id !== created.id && c.code !== created.code),
+      ]);
+      setNewCouponCode('');
+      showNotification(
+        `Coupon "${created.code}" created! Valid for first ${created.maxUses} customers.`
+      );
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setCreatingCoupon(false);
+    }
+  };
+
+  const handleToggleCouponActive = async (coupon: Coupon) => {
+    const nextState = !coupon.isActive;
+    setCoupons((prev) =>
+      prev.map((c) => (c.id === coupon.id ? { ...c, isActive: nextState } : c))
+    );
+    showNotification(
+      `Coupon "${coupon.code}" ${nextState ? 'activated' : 'paused'}.`
+    );
+    await updateCoupon(coupon.id, { isActive: nextState });
+  };
+
+  const handleResetCouponUses = async (coupon: Coupon) => {
+    setCoupons((prev) =>
+      prev.map((c) => (c.id === coupon.id ? { ...c, usedCount: 0 } : c))
+    );
+    showNotification(`Reset usage count for coupon "${coupon.code}" to 0/${coupon.maxUses}.`);
+    await updateCoupon(coupon.id, { usedCount: 0 });
+  };
+
+  const handleDeleteCoupon = async (coupon: Coupon) => {
+    if (!window.confirm(`Delete coupon code "${coupon.code}"?`)) return;
+    setCoupons((prev) => prev.filter((c) => c.id !== coupon.id));
+    showNotification(`Deleted coupon "${coupon.code}".`);
+    await deleteCoupon(coupon.id);
   };
 
   const showNotification = (msg: string) => {
@@ -476,7 +581,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
                 icon: ShoppingBag,
                 badge: stats.pendingOrders,
               },
-              { id: 'products', label: `Inventory Products (${stats.totalProducts})`, icon: Package },
+              {
+                id: 'products',
+                label: `Inventory & Offers (${stats.totalProducts})`,
+                icon: Package,
+              },
+              {
+                id: 'coupons',
+                label: `Coupons (${coupons.length})`,
+                icon: Ticket,
+              },
               {
                 id: 'bulk',
                 label: `Wholesale Inquiries (${stats.totalBulkInquiries})`,
@@ -562,7 +676,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
                   <h3 className="text-2xl font-bold font-serif text-cyan-400 mt-1">
                     {stats.totalProducts}
                   </h3>
-                  <p className="text-[11px] text-cyan-300/80 mt-0.5">Khakhra, Hing & Farshan</p>
+                  <p className="text-[11px] text-cyan-300/80 mt-0.5">
+                    {products.reduce((acc, p) => acc + (p.stockQuantity || 0), 0)} total units in stock
+                  </p>
                 </div>
                 <div className="w-12 h-12 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
                   <Package className="w-6 h-6" />
@@ -572,15 +688,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between">
                 <div>
                   <p className="text-xs text-slate-400 font-semibold uppercase">
-                    Bulk & Event Inquiries
+                    Active Promo Coupons
                   </p>
                   <h3 className="text-2xl font-bold font-serif text-purple-400 mt-1">
-                    {stats.totalBulkInquiries}
+                    {coupons.filter((c) => c.isActive && c.usedCount < c.maxUses).length}
                   </h3>
-                  <p className="text-[11px] text-purple-300/80 mt-0.5">Weddings & Wholesale</p>
+                  <p className="text-[11px] text-purple-300/80 mt-0.5">
+                    {coupons.reduce((acc, c) => acc + c.usedCount, 0)} total coupon redemptions
+                  </p>
                 </div>
                 <div className="w-12 h-12 rounded-xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-400">
-                  <PhoneCall className="w-6 h-6" />
+                  <Ticket className="w-6 h-6" />
                 </div>
               </div>
             </div>
@@ -595,7 +713,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
                   </h3>
                   <p className="text-xs text-slate-400">
                     Click &quot;Confirm Order&quot; below to approve the customer&apos;s request.
-                    This flips their status from Yellow Circle to Green Confirmed Checkmark.
+                    Cancelling an order automatically restores stock, offer units, and coupon uses.
                   </p>
                 </div>
                 <button
@@ -631,9 +749,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
                           <div className="text-slate-300">
                             <strong>Items ({ord.items.length}):</strong>{' '}
                             {ord.items
-                              .map((i) => `${i.quantity}x ${i.productName} (${i.optionLabel})`)
+                              .map(
+                                (i) =>
+                                  `${i.quantity}x ${i.productName}${i.flavor ? ` (${i.flavor})` : ''}`
+                              )
                               .join(', ')}
                           </div>
+                          {ord.couponCode && (
+                            <div className="text-emerald-400 font-bold">
+                              🏷️ Coupon Applied: {ord.couponCode} (-₹{ord.couponDiscount})
+                            </div>
+                          )}
                           <div className="text-slate-400">
                             Address: {ord.address}, {ord.city} ({ord.pincode})
                           </div>
@@ -737,7 +863,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
                           </span>
                         </div>
 
-                        {/* Status Label */}
                         <div>
                           {isPending && (
                             <span className="px-3 py-1 text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-full flex items-center gap-1.5 animate-pulse">
@@ -756,7 +881,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
                           )}
                           {isCancelled && (
                             <span className="px-3 py-1 text-xs font-bold bg-red-500/20 text-red-300 border border-red-500/40 rounded-full flex items-center gap-1.5">
-                              <XCircle className="w-3.5 h-3.5" /> Cancelled
+                              <XCircle className="w-3.5 h-3.5" /> Cancelled (Stock Restored)
                             </span>
                           )}
                         </div>
@@ -786,14 +911,38 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
 
                         <div className="space-y-1.5 bg-slate-950/60 p-3 rounded-xl border border-slate-800/80">
                           <p className="font-bold text-slate-200">Items Breakdown:</p>
-                          {ord.items.map((it, idx) => (
-                            <div key={idx} className="flex justify-between text-[11px]">
-                              <span>
-                                {it.quantity}x {it.productName} ({it.optionLabel})
-                              </span>
-                              <span className="font-bold text-slate-200">₹{it.totalPrice}</span>
+                          {ord.items.map((it, idx) => {
+                            const isPartial =
+                              (it.offerUnitsApplied || 0) > 0 &&
+                              (it.regularUnitsApplied || 0) > 0;
+                            return (
+                              <div key={idx} className="space-y-0.5">
+                                <div className="flex justify-between text-[11px]">
+                                  <span>
+                                    {it.quantity}x {it.productName}
+                                    {it.flavor ? ` (${it.flavor})` : ''}
+                                  </span>
+                                  <span className="font-bold text-slate-200">₹{it.totalPrice}</span>
+                                </div>
+                                {isPartial ? (
+                                  <div className="text-[10px] text-amber-400">
+                                    ↳ {it.offerUnitsApplied} @ ₹{it.offerUnitPrice} (Offer) +{' '}
+                                    {it.regularUnitsApplied} @ ₹{it.unitPrice} (Reg)
+                                  </div>
+                                ) : (it.offerUnitsApplied || 0) > 0 ? (
+                                  <div className="text-[10px] text-emerald-400">
+                                    ↳ {it.offerUnitsApplied} unit(s) @ Offer ₹{it.offerUnitPrice}
+                                  </div>
+                                ) : null}
+                              </div>
+                            );
+                          })}
+                          {ord.couponCode && (ord.couponDiscount || 0) > 0 && (
+                            <div className="flex justify-between text-[11px] text-emerald-400 font-bold">
+                              <span>Coupon ({ord.couponCode}):</span>
+                              <span>-₹{ord.couponDiscount}</span>
                             </div>
-                          ))}
+                          )}
                           {ord.deliveryFee > 0 && (
                             <div className="flex justify-between text-[11px] text-slate-400">
                               <span>Delivery Fee:</span>
@@ -833,7 +982,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
                             onClick={() => handleCancelOrder(ord.id)}
                             className="px-3 py-2 bg-slate-800 hover:bg-red-950/80 text-slate-300 hover:text-red-300 font-bold text-xs rounded-xl transition-all"
                           >
-                            Cancel Order
+                            Cancel Order & Restore Stock
                           </button>
                         )}
                       </div>
@@ -845,7 +994,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
           </div>
         )}
 
-        {/* TAB 3: PRODUCTS INVENTORY */}
+        {/* TAB 3: PRODUCTS INVENTORY & LIMITED-UNIT OFFERS */}
         {activeTab === 'products' && (
           <div className="space-y-4">
             <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3">
@@ -853,7 +1002,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
                 <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
-                  placeholder="Search products..."
+                  placeholder="Search inventory products..."
                   value={productSearch}
                   onChange={(e) => setProductSearch(e.target.value)}
                   className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white"
@@ -872,99 +1021,473 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredProducts.map((prod) => (
-                <div
-                  key={prod.id}
-                  className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between space-y-3 relative"
-                >
-                  <div className="flex gap-3">
-                    <img
-                      src={prod.imageUrl}
-                      alt={prod.name}
-                      loading="lazy"
-                      decoding="async"
-                      onError={(e) => {
-                        const target = e.currentTarget;
-                        const fallback =
-                          FALLBACK_IMAGES[prod.category] || FALLBACK_IMAGES.default;
-                        if (target.src !== fallback) {
-                          target.src = fallback;
-                        }
-                      }}
-                      className="w-20 h-20 object-cover rounded-xl bg-slate-950 border border-slate-800 shrink-0"
-                    />
+              {filteredProducts.map((prod) => {
+                const pricing = calculateProductOfferPricing(prod, 1);
+                const hasOfferConfig = Boolean(prod.offer?.active);
+                const offerCompleted =
+                  hasOfferConfig &&
+                  prod.offer &&
+                  prod.offer.unitsSold >= prod.offer.unitLimit;
 
-                    <div className="space-y-1">
-                      <span className="text-[10px] uppercase font-bold text-cyan-400 bg-cyan-950 px-2 py-0.5 rounded border border-cyan-800">
-                        {prod.category}
-                      </span>
-                      <h4 className="font-serif font-bold text-white text-sm line-clamp-1">
-                        {prod.name}
-                      </h4>
-                      {prod.gujaratiName && (
-                        <p className="text-xs text-slate-400 font-serif">{prod.gujaratiName}</p>
+                return (
+                  <div
+                    key={prod.id}
+                    className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between space-y-3 relative"
+                  >
+                    <div className="flex gap-3">
+                      <img
+                        src={prod.imageUrl}
+                        alt={prod.name}
+                        loading="lazy"
+                        decoding="async"
+                        onError={(e) => {
+                          const target = e.currentTarget;
+                          const fallback =
+                            FALLBACK_IMAGES[prod.category] || FALLBACK_IMAGES.default;
+                          if (target.src !== fallback) {
+                            target.src = fallback;
+                          }
+                        }}
+                        className="w-20 h-20 object-cover rounded-xl bg-slate-950 border border-slate-800 shrink-0"
+                      />
+
+                      <div className="space-y-1 flex-1">
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="text-[10px] uppercase font-bold text-cyan-400 bg-cyan-950 px-2 py-0.5 rounded border border-cyan-800">
+                            {prod.category}
+                          </span>
+                          <span className="font-serif font-bold text-sm text-emerald-400">
+                            {pricing.hasActiveOffer ? (
+                              <>
+                                <span className="text-xs text-slate-500 line-through mr-1">
+                                  ₹{prod.price}
+                                </span>
+                                ₹{pricing.offerUnitPrice}
+                              </>
+                            ) : (
+                              `₹${prod.price}`
+                            )}
+                          </span>
+                        </div>
+                        <h4 className="font-serif font-bold text-white text-sm line-clamp-1">
+                          {prod.name}
+                        </h4>
+                        {prod.gujaratiName && (
+                          <p className="text-xs text-slate-400 font-serif">{prod.gujaratiName}</p>
+                        )}
+                        <p className="text-[11px] text-slate-400 line-clamp-2">
+                          {prod.description}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Stock & Limited-Unit Offer Status Box */}
+                    <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400 font-semibold">Stock Quantity:</span>
+                        <span
+                          className={`font-mono font-bold px-2 py-0.5 rounded ${
+                            prod.stockQuantity > 10
+                              ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                              : prod.stockQuantity > 0
+                              ? 'bg-amber-950 text-amber-300 border border-amber-800'
+                              : 'bg-red-950 text-red-300 border border-red-800'
+                          }`}
+                        >
+                          {prod.stockQuantity} units in stock
+                        </span>
+                      </div>
+
+                      {hasOfferConfig && prod.offer ? (
+                        <div className="pt-2 border-t border-slate-800/80 space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-amber-400 flex items-center gap-1 text-[11px]">
+                              <Flame className="w-3.5 h-3.5" />
+                              {prod.offer.discountType === 'percentage'
+                                ? `${prod.offer.discountValue}% OFF`
+                                : `₹${prod.offer.discountValue} OFF`}{' '}
+                              (First {prod.offer.unitLimit} units)
+                            </span>
+                            <span
+                              className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                                offerCompleted
+                                  ? 'bg-rose-950 text-rose-300 border border-rose-800'
+                                  : 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                              }`}
+                            >
+                              {offerCompleted
+                                ? 'Offer Completed'
+                                : `${pricing.remainingOfferUnits} left`}
+                            </span>
+                          </div>
+
+                          <div className="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden border border-slate-800">
+                            <div
+                              className={`h-full transition-all ${
+                                offerCompleted ? 'bg-rose-500' : 'bg-amber-400'
+                              }`}
+                              style={{
+                                width: `${Math.min(
+                                  100,
+                                  (prod.offer.unitsSold / Math.max(1, prod.offer.unitLimit)) * 100
+                                )}%`,
+                              }}
+                            />
+                          </div>
+
+                          <div className="flex items-center justify-between text-[10px] text-slate-400">
+                            <span>
+                              Claimed: <strong>{prod.offer.unitsSold}</strong> /{' '}
+                              {prod.offer.unitLimit} units
+                            </span>
+                            <span>
+                              Badge:{' '}
+                              <strong className="text-cyan-300">
+                                {prod.offer.badgeMode === 'claimed'
+                                  ? `${prod.offer.unitsSold}/${prod.offer.unitLimit} claimed`
+                                  : `${pricing.remainingOfferUnits} units left`}
+                              </strong>
+                            </span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="pt-1 border-t border-slate-800/80 text-[11px] text-slate-500 flex items-center justify-between">
+                          <span>No active limited-unit offer</span>
+                          <button
+                            onClick={() => {
+                              setEditingProduct(prod);
+                              setIsAddProductOpen(true);
+                            }}
+                            className="text-amber-400 hover:underline font-semibold"
+                          >
+                            + Add Offer
+                          </button>
+                        </div>
                       )}
-                      <p className="text-[11px] text-slate-400 line-clamp-2">{prod.description}</p>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-800 text-xs">
+                      <span
+                        className={`font-bold text-[10px] px-2 py-0.5 rounded ${
+                          prod.inStock && prod.stockQuantity > 0
+                            ? 'bg-emerald-950 text-emerald-400'
+                            : 'bg-red-950 text-red-400'
+                        }`}
+                      >
+                        {prod.inStock && prod.stockQuantity > 0 ? 'In Stock' : 'Out of Stock'}
+                      </span>
+
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => {
+                            setEditingProduct(prod);
+                            setIsAddProductOpen(true);
+                          }}
+                          className="px-2.5 py-1.5 text-slate-200 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors flex items-center gap-1 text-[11px] font-bold"
+                          title="Edit Product, Stock & Offer"
+                        >
+                          <Edit className="w-3.5 h-3.5 text-cyan-400" /> Edit Stock / Offer
+                        </button>
+
+                        <button
+                          onClick={() => handleDeleteProduct(prod.id, prod.name)}
+                          className="p-1.5 text-red-400 hover:text-red-300 hover:bg-red-950/50 rounded-lg transition-colors"
+                          title="Delete Product"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 4: COUPONS & PROMO CODES GENERATOR */}
+        {activeTab === 'coupons' && (
+          <div className="space-y-6">
+            {/* Create / Generate Coupon Form */}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-6 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+                <div>
+                  <h3 className="font-serif font-bold text-lg text-white flex items-center gap-2">
+                    <Ticket className="w-5 h-5 text-cyan-400" />
+                    Generate Customer Coupon Code
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Create promo codes with Flat ₹ Off or % Cart Discount, Minimum Cart Value, and
+                    First N Customers limit (e.g., First 10 or 20 orders).
+                  </p>
+                </div>
+              </div>
+
+              <form onSubmit={handleCreateCoupon} className="space-y-4 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                  {/* Coupon Code Input + Auto-Generate */}
+                  <div className="lg:col-span-1 space-y-1">
+                    <label className="block font-bold text-slate-200">Coupon Code *</label>
+                    <div className="flex gap-1.5">
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. FIRST20"
+                        value={newCouponCode}
+                        onChange={(e) => setNewCouponCode(e.target.value.toUpperCase())}
+                        className="w-full p-2.5 bg-slate-950 border border-slate-700 rounded-lg text-cyan-300 font-mono font-bold uppercase focus:ring-1 focus:ring-cyan-500 focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAutoGenerateCode}
+                        className="px-2.5 py-2 bg-slate-800 hover:bg-slate-700 text-amber-300 rounded-lg border border-slate-700 shrink-0 flex items-center gap-1 font-bold text-[11px]"
+                        title="Auto-Generate Random Code"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" /> Gen
+                      </button>
                     </div>
                   </div>
 
-                  {/* Options & Price List */}
-                  <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 space-y-1 text-xs">
-                    <span className="font-bold text-slate-300 text-[11px] block">
-                      Options ({prod.saleType === 'weight' ? 'Weight' : 'Packets'}):
-                    </span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {prod.options.map((opt) => (
-                        <span
-                          key={opt.id}
-                          className="px-2 py-0.5 bg-slate-900 text-slate-200 text-[10px] rounded border border-slate-800 font-medium"
+                  {/* Discount Type */}
+                  <div className="space-y-1">
+                    <label className="block font-bold text-slate-200">Discount Type *</label>
+                    <select
+                      value={newCouponType}
+                      onChange={(e) => setNewCouponType(e.target.value as DiscountType)}
+                      className="w-full p-2.5 bg-slate-950 border border-slate-700 rounded-lg text-white focus:ring-1 focus:ring-cyan-500 focus:outline-none"
+                    >
+                      <option value="flat">Flat Rupees Off (₹)</option>
+                      <option value="percentage">Percentage Off Cart (%)</option>
+                    </select>
+                  </div>
+
+                  {/* Discount Value */}
+                  <div className="space-y-1">
+                    <label className="block font-bold text-slate-200">
+                      {newCouponType === 'flat' ? 'Flat Off Amount (₹) *' : 'Discount (%) *'}
+                    </label>
+                    <input
+                      type="number"
+                      required
+                      min={1}
+                      max={newCouponType === 'percentage' ? 95 : 10000}
+                      value={newCouponValue}
+                      onChange={(e) => setNewCouponValue(Math.max(1, Number(e.target.value)))}
+                      className="w-full p-2.5 bg-slate-950 border border-slate-700 rounded-lg text-emerald-300 font-bold focus:ring-1 focus:ring-cyan-500 focus:outline-none"
+                    />
+                  </div>
+
+                  {/* Minimum Cart Value */}
+                  <div className="space-y-1">
+                    <label className="block font-bold text-slate-200">
+                      Minimum Cart Value (₹) *
+                    </label>
+                    <input
+                      type="number"
+                      required
+                      min={0}
+                      placeholder="e.g. 499"
+                      value={newCouponMinCart}
+                      onChange={(e) => setNewCouponMinCart(Math.max(0, Number(e.target.value)))}
+                      className="w-full p-2.5 bg-slate-950 border border-slate-700 rounded-lg text-amber-300 font-bold focus:ring-1 focus:ring-cyan-500 focus:outline-none"
+                    />
+                    <div className="flex gap-1">
+                      {[0, 299, 499, 999].map((v) => (
+                        <button
+                          key={v}
+                          type="button"
+                          onClick={() => setNewCouponMinCart(v)}
+                          className={`px-1.5 py-0.5 text-[10px] rounded border ${
+                            newCouponMinCart === v
+                              ? 'bg-cyan-600 text-white border-cyan-500 font-bold'
+                              : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                          }`}
                         >
-                          {opt.label}: <strong className="text-cyan-400">₹{opt.price}</strong>
-                        </span>
+                          {v === 0 ? 'No Min' : `₹${v}`}
+                        </button>
                       ))}
                     </div>
                   </div>
 
-                  {/* Actions */}
-                  <div className="flex items-center justify-between pt-2 border-t border-slate-800 text-xs">
-                    <span
-                      className={`font-bold text-[10px] px-2 py-0.5 rounded ${
-                        prod.inStock
-                          ? 'bg-emerald-950 text-emerald-400'
-                          : 'bg-red-950 text-red-400'
-                      }`}
-                    >
-                      {prod.inStock ? 'In Stock' : 'Out of Stock'}
-                    </span>
+                  {/* Customer Usage Limit (First N Customers) */}
+                  <div className="space-y-1">
+                    <label className="block font-bold text-slate-200">
+                      Valid for First X Customers *
+                    </label>
+                    <input
+                      type="number"
+                      required
+                      min={1}
+                      placeholder="e.g. 10 or 20"
+                      value={newCouponMaxUses}
+                      onChange={(e) => setNewCouponMaxUses(Math.max(1, Number(e.target.value)))}
+                      className="w-full p-2.5 bg-slate-950 border border-slate-700 rounded-lg text-purple-300 font-bold focus:ring-1 focus:ring-cyan-500 focus:outline-none"
+                    />
+                    <div className="flex gap-1">
+                      {[10, 20, 50, 100].map((u) => (
+                        <button
+                          key={u}
+                          type="button"
+                          onClick={() => setNewCouponMaxUses(u)}
+                          className={`px-1.5 py-0.5 text-[10px] rounded border ${
+                            newCouponMaxUses === u
+                              ? 'bg-purple-600 text-white border-purple-500 font-bold'
+                              : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                          }`}
+                        >
+                          First {u}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
 
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => {
-                          setEditingProduct(prod);
-                          setIsAddProductOpen(true);
-                        }}
-                        className="p-1.5 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
-                        title="Edit Product"
+                <div className="flex justify-end pt-2">
+                  <button
+                    type="submit"
+                    disabled={creatingCoupon}
+                    className="px-5 py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold rounded-xl shadow-lg transition-all flex items-center gap-2"
+                  >
+                    <Plus className="w-4 h-4" />
+                    {creatingCoupon ? 'Creating Coupon...' : 'Create & Activate Coupon Code'}
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            {/* Existing Coupons List */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {coupons.map((c) => {
+                const isExhausted = c.usedCount >= c.maxUses;
+                const remainingUses = Math.max(0, c.maxUses - c.usedCount);
+
+                return (
+                  <div
+                    key={c.id}
+                    className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between space-y-3"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-extrabold text-sm text-cyan-300 bg-slate-950 px-3 py-1 rounded-lg border border-cyan-800/60">
+                          {c.code}
+                        </span>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(c.code);
+                            setCopiedCouponId(c.id);
+                            setTimeout(() => setCopiedCouponId(null), 2000);
+                          }}
+                          className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300"
+                          title="Copy Coupon Code"
+                        >
+                          {copiedCouponId === c.id ? (
+                            <Check className="w-3.5 h-3.5 text-emerald-400" />
+                          ) : (
+                            <Copy className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      </div>
+
+                      <span
+                        className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
+                          !c.isActive
+                            ? 'bg-slate-800 text-slate-400 border-slate-700'
+                            : isExhausted
+                            ? 'bg-rose-950 text-rose-300 border-rose-800'
+                            : 'bg-emerald-950 text-emerald-300 border-emerald-800'
+                        }`}
                       >
-                        <Edit className="w-4 h-4" />
-                      </button>
+                        {!c.isActive
+                          ? 'Paused'
+                          : isExhausted
+                          ? 'Limit Reached (Completed)'
+                          : 'Active'}
+                      </span>
+                    </div>
+
+                    <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2 text-xs">
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Discount Benefit:</span>
+                        <span className="font-bold text-emerald-400">
+                          {c.discountType === 'flat'
+                            ? `Flat ₹${c.discountValue} OFF`
+                            : `${c.discountValue}% OFF Cart Value`}
+                        </span>
+                      </div>
+
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Minimum Cart Value:</span>
+                        <span className="font-bold text-amber-300">
+                          {c.minCartValue > 0 ? `₹${c.minCartValue}` : 'No Minimum (₹0)'}
+                        </span>
+                      </div>
+
+                      <div className="pt-1 border-t border-slate-800 space-y-1">
+                        <div className="flex justify-between text-[11px]">
+                          <span className="text-slate-400">
+                            Customer Limit (First {c.maxUses}):
+                          </span>
+                          <span className="font-bold text-cyan-300">
+                            {c.usedCount} / {c.maxUses} claimed ({remainingUses} left)
+                          </span>
+                        </div>
+                        <div className="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden border border-slate-800">
+                          <div
+                            className={`h-full transition-all ${
+                              isExhausted ? 'bg-rose-500' : 'bg-cyan-400'
+                            }`}
+                            style={{
+                              width: `${Math.min(
+                                100,
+                                (c.usedCount / Math.max(1, c.maxUses)) * 100
+                              )}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-800 text-xs">
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => handleToggleCouponActive(c)}
+                          className={`px-2.5 py-1 rounded-lg font-bold text-[11px] border transition-colors ${
+                            c.isActive
+                              ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+                              : 'bg-emerald-950 hover:bg-emerald-900 text-emerald-300 border-emerald-800'
+                          }`}
+                        >
+                          {c.isActive ? 'Pause' : 'Activate'}
+                        </button>
+
+                        {c.usedCount > 0 && (
+                          <button
+                            onClick={() => handleResetCouponUses(c)}
+                            className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 text-[11px] font-bold flex items-center gap-1"
+                            title="Reset used count to 0"
+                          >
+                            <RotateCcw className="w-3 h-3" /> Reset 0/{c.maxUses}
+                          </button>
+                        )}
+                      </div>
 
                       <button
-                        onClick={() => handleDeleteProduct(prod.id, prod.name)}
+                        onClick={() => handleDeleteCoupon(c)}
                         className="p-1.5 text-red-400 hover:text-red-300 hover:bg-red-950/50 rounded-lg transition-colors"
-                        title="Delete Product"
+                        title="Delete Coupon"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
 
-        {/* TAB 4: BULK INQUIRIES */}
+        {/* TAB 5: BULK INQUIRIES */}
         {activeTab === 'bulk' && (
           <div className="space-y-4">
             <h3 className="font-serif font-bold text-lg text-white">
@@ -1032,7 +1555,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
           </div>
         )}
 
-        {/* 5. SUPABASE DATABASE TAB */}
+        {/* TAB 6: SUPABASE DATABASE TAB */}
         {activeTab === 'database' && (
           <div className="space-y-6">
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
@@ -1046,8 +1569,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
                       Supabase Cloud Storage Integration
                     </h2>
                     <p className="text-xs text-slate-400">
-                      Store customer details, orders, products, reviews, and wholesale inquiries in
-                      a production PostgreSQL database.
+                      Store customer details, orders, products, stock offers, coupons, reviews, and
+                      wholesale inquiries in PostgreSQL.
                     </p>
                   </div>
                 </div>
@@ -1066,7 +1589,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
                 </div>
               </div>
 
-              {/* Status & Diagnostics Banner */}
               {supabaseInfo?.configured ? (
                 <div className="p-4 bg-emerald-950/40 border border-emerald-800/60 rounded-xl text-xs text-emerald-200 space-y-2">
                   <div className="font-bold text-emerald-400 flex items-center justify-between">
@@ -1088,41 +1610,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
                     <div className="p-2.5 bg-amber-950/80 border border-amber-800/60 rounded-lg text-amber-200 text-xs space-y-1">
                       <div className="font-bold text-amber-300">⚠️ Table Ping Warning:</div>
                       <p>{supabaseInfo.pingError || 'Could not query "products" table.'}</p>
-                      <p className="text-[11px] text-amber-300/80">
-                        <b>Fix:</b> Please copy the SQL Script below and run it in your{' '}
-                        <b>Supabase SQL Editor</b> tab to create the required tables.
-                      </p>
                     </div>
                   )}
                 </div>
-              ) : (
-                <div className="p-4 bg-amber-950/30 border border-amber-800/50 rounded-xl text-xs space-y-2 text-amber-200">
-                  <div className="font-bold text-amber-300 flex items-center gap-2">
-                    <Clock className="w-4 h-4 text-amber-400" />
-                    Supabase Credentials Not Yet Active
-                  </div>
-                  <p className="text-slate-300">
-                    Enter your Supabase Project URL and API Key in the form below to connect
-                    directly, or configure Environment Variables in AI Studio Settings.
-                  </p>
-                </div>
-              )}
+              ) : null}
 
               {/* Direct Connect Form */}
               <div className="p-5 bg-slate-950 border border-slate-800 rounded-xl space-y-4">
-                <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
-                  <div>
-                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                      <Server className="w-4 h-4 text-cyan-400" />
-                      Option A: Connect Supabase Directly (Instant Setup)
-                    </h3>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      Paste your Project URL & Key here to connect immediately without waiting for
-                      environment re-deployments.
-                    </p>
-                  </div>
-                </div>
-
                 <form onSubmit={handleDirectConnect} className="space-y-4 text-xs">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-1.5">
@@ -1170,17 +1664,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
                       disabled={connectLoading}
                       className="px-5 py-2.5 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white text-xs font-bold rounded-lg shadow-lg shadow-cyan-950/50 flex items-center gap-2 transition-all"
                     >
-                      {connectLoading ? (
-                        <>
-                          <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                          <span>Connecting & Verifying...</span>
-                        </>
-                      ) : (
-                        <>
-                          <CheckCircle2 className="w-4 h-4" />
-                          <span>Connect & Verify Supabase Now</span>
-                        </>
-                      )}
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>
+                        {connectLoading ? 'Connecting...' : 'Connect & Verify Supabase Now'}
+                      </span>
                     </button>
                   </div>
                 </form>
@@ -1191,7 +1678,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
                 <div className="flex items-center justify-between">
                   <h3 className="font-bold text-xs text-slate-200 flex items-center gap-2">
                     <span>
-                      Database Tables, Indexes, Realtime & RLS Script (run in Supabase SQL Editor)
+                      Database Tables, Coupons, Indexes, Realtime & RLS Script (run in Supabase SQL
+                      Editor)
                     </span>
                   </h3>
                   <button
@@ -1234,7 +1722,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
         editingProduct={editingProduct}
         onSuccess={() => {
           setIsAddProductOpen(false);
-          showNotification('Product saved successfully to store catalog!');
+          showNotification('Product, stock & offer saved successfully!');
           loadAllData(true);
         }}
       />

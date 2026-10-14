@@ -135,7 +135,7 @@ const translations: Record<Language, Translations> = {
 
     heroWelcome: "Welcome • Swaad Gujarat Nu",
     heroTitle: "Handcrafted Khakhra, Pure Bandhani Hing & Authentic Farshan",
-    heroDesc: "Made with 100% pure besan, fresh groundnut oil, aromatic ajwain, and hand-ground spices. Select your desired weight (250g, 500g, 1kg) or packets & flavors. Order now without advance online payment!",
+    heroDesc: "Made with 100% pure besan, fresh groundnut oil, aromatic ajwain, and hand-ground spices. Select your desired flavors and quantities. Order now without advance online payment!",
     zeroPreservatives: "Zero Preservatives",
     freshBatchDaily: "Fresh batch daily",
     pureHingBadge: "100% Pure Hing",
@@ -150,7 +150,7 @@ const translations: Record<Language, Translations> = {
     heroSpecialDesc: "Freshly ground and handmade with age-old family recipes.",
 
     showingItems: "Showing authentic Gujarati delicacies",
-    selectWeightTitle: "Select Weight & Flavors to Buy Fresh",
+    selectWeightTitle: "Fresh Handcrafted Delicacies & Pure Hing",
     noMatchTitle: "No items match your selection",
     noMatchDesc: "There are currently no products in this category or search filter.",
     resetFilters: "Show All Items",
@@ -247,7 +247,7 @@ const translations: Record<Language, Translations> = {
     heroSpecialDesc: "પરંપરાગત રીતે હાથેથી વણેલા અને તાજા મસાલાથી સજ્જ.",
 
     showingItems: "અસલી ગુજરાતી ફરસાણ વાનગીઓ",
-    selectWeightTitle: "તાજી વાનગીઓ ખરીદવા વજન અને સ્વાદ પસંદ કરો",
+    selectWeightTitle: "તાજી વાનગીઓ અને શુદ્ધ હીંગ ખરીદો",
     noMatchTitle: "આ કેટેગરીમાં હાલ કોઈ વાનગી નથી",
     noMatchDesc: "તમાધી પસંદ કરેલ કેટેગરી અથવા સર્ચ મુજબ કોઈ પ્રોડક્ટ ઉપલબ્ધ નથી.",
     resetFilters: "બધી વાનગીઓ જુઓ",
@@ -344,7 +344,7 @@ const translations: Record<Language, Translations> = {
     heroSpecialDesc: "पारंपरिक तरीके से हाथों से तैयार और सुगंधित मसालों से भरपूर।",
 
     showingItems: "असली गुजराती फरसाण उत्पाद",
-    selectWeightTitle: "ताज़ा व्यंजन खरीदने हेतु वज़न व फ्लेवर चुनें",
+    selectWeightTitle: "ताज़ा हस्तनिर्मित व्यंजन और शुद्ध हींग खरीदें",
     noMatchTitle: "इस श्रेणी में कोई व्यंजन नहीं है",
     noMatchDesc: "चयनित श्रेणी या खोज के अनुसार कोई उत्पाद उपलब्ध नहीं है।",
     resetFilters: "सभी व्यंजन देखें",

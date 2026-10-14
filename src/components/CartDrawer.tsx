@@ -1,6 +1,6 @@
 import React from 'react';
 import { CartItem } from '../types';
-import { X, Trash2, ShoppingBag, ArrowRight, Truck } from 'lucide-react';
+import { X, Trash2, ShoppingBag, ArrowRight, Truck, Zap } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 import { FALLBACK_IMAGES, resolveProductImage } from '../services/api';
 
@@ -26,6 +26,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   if (!isOpen) return null;
 
   const subtotal = items.reduce((sum, item) => sum + item.totalPrice, 0);
+  const totalOfferSavings = items.reduce((sum, item) => sum + (item.discountSaved || 0), 0);
   const freeShippingThreshold = 499;
   const remainingForFreeShipping = Math.max(0, freeShippingThreshold - subtotal);
   const deliveryFee = subtotal >= freeShippingThreshold || subtotal === 0 ? 0 : 40;
@@ -87,76 +88,110 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
               </p>
             </div>
           ) : (
-            items.map((item) => (
-              <div
-                key={item.cartItemId}
-                className="flex gap-3 p-3 bg-white rounded-xl border border-[#EED4A8] relative group shadow-xs"
-              >
-                <img
-                  src={resolveProductImage(item.imageUrl, item.category)}
-                  alt={item.productName}
-                  loading="lazy"
-                  decoding="async"
-                  onError={(e) => {
-                    const target = e.currentTarget;
-                    const fallback = FALLBACK_IMAGES[item.category] || FALLBACK_IMAGES.default;
-                    if (target.src !== fallback) {
-                      target.src = fallback;
-                    }
-                  }}
-                  className="w-16 h-16 object-cover rounded-xl bg-[#FEFBF2] border border-[#EED4A8] shrink-0"
-                />
+            items.map((item) => {
+              const hasOfferApplied = (item.offerUnitsApplied || 0) > 0;
+              const isPartial =
+                (item.offerUnitsApplied || 0) > 0 && (item.regularUnitsApplied || 0) > 0;
 
-                <div className="flex-1 space-y-1">
-                  <div className="flex justify-between items-start gap-2">
-                    <h4 className="font-serif font-bold text-xs text-[#451A03] line-clamp-1">
-                      {item.productName}
-                    </h4>
-                    <button
-                      onClick={() => onRemoveItem(item.cartItemId)}
-                      className="text-[#92400E] hover:text-red-700 p-0.5 transition-colors"
-                      title="Remove Item"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
+              return (
+                <div
+                  key={item.cartItemId}
+                  className="flex gap-3 p-3 bg-white rounded-xl border border-[#EED4A8] relative group shadow-xs"
+                >
+                  <img
+                    src={resolveProductImage(item.imageUrl, item.category)}
+                    alt={item.productName}
+                    loading="lazy"
+                    decoding="async"
+                    onError={(e) => {
+                      const target = e.currentTarget;
+                      const fallback = FALLBACK_IMAGES[item.category] || FALLBACK_IMAGES.default;
+                      if (target.src !== fallback) {
+                        target.src = fallback;
+                      }
+                    }}
+                    className="w-16 h-16 object-cover rounded-xl bg-[#FEFBF2] border border-[#EED4A8] shrink-0"
+                  />
 
-                  <div className="text-[11px] text-[#92400E] space-y-0.5 font-medium">
-                    <div>
-                      Size: <span className="font-bold text-[#78350F]">{item.selectedOption.label}</span>
+                  <div className="flex-1 space-y-1">
+                    <div className="flex justify-between items-start gap-2">
+                      <h4 className="font-serif font-bold text-xs text-[#451A03] line-clamp-1">
+                        {item.productName}
+                      </h4>
+                      <button
+                        onClick={() => onRemoveItem(item.cartItemId)}
+                        className="text-[#92400E] hover:text-red-700 p-0.5 transition-colors"
+                        title="Remove Item"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
-                    {item.selectedFlavor && (
-                      <div>
-                        {t.flavorLabel}{' '}
-                        <span className="font-bold text-[#78350F]">{item.selectedFlavor}</span>
+
+                    <div className="text-[11px] text-[#92400E] space-y-0.5 font-medium">
+                      {item.selectedFlavor && (
+                        <div>
+                          {t.flavorLabel}{' '}
+                          <span className="font-bold text-[#78350F]">{item.selectedFlavor}</span>
+                        </div>
+                      )}
+
+                      {isPartial ? (
+                        <div className="text-[10px] text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 flex items-center gap-1">
+                          <Zap className="w-3 h-3 text-amber-600 shrink-0" />
+                          <span>
+                            {item.offerUnitsApplied} @ ₹{item.offerUnitPrice} (Offer) +{' '}
+                            {item.regularUnitsApplied} @ ₹{item.unitPrice} (Reg)
+                          </span>
+                        </div>
+                      ) : hasOfferApplied ? (
+                        <div className="text-[10px] text-emerald-800 font-bold">
+                          🔥 Offer Price: ₹{item.offerUnitPrice}/unit{' '}
+                          <span className="line-through text-stone-400 font-normal">
+                            ₹{item.unitPrice}
+                          </span>
+                        </div>
+                      ) : (
+                        <div>
+                          Unit Price:{' '}
+                          <span className="font-bold text-[#78350F]">₹{item.unitPrice}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1">
+                      <div className="flex items-center border border-[#EED4A8] rounded-lg bg-[#FEFBF2]">
+                        <button
+                          onClick={() => onUpdateQuantity(item.cartItemId, item.quantity - 1)}
+                          className="px-2 py-0.5 text-xs font-bold text-[#78350F] hover:bg-[#FEF3C7]"
+                        >
+                          -
+                        </button>
+                        <span className="px-2 text-xs font-bold text-[#451A03]">
+                          {item.quantity}
+                        </span>
+                        <button
+                          onClick={() => onUpdateQuantity(item.cartItemId, item.quantity + 1)}
+                          className="px-2 py-0.5 text-xs font-bold text-[#78350F] hover:bg-[#FEF3C7]"
+                        >
+                          +
+                        </button>
                       </div>
-                    )}
-                  </div>
 
-                  <div className="flex items-center justify-between pt-1">
-                    <div className="flex items-center border border-[#EED4A8] rounded-lg bg-[#FEFBF2]">
-                      <button
-                        onClick={() => onUpdateQuantity(item.cartItemId, item.quantity - 1)}
-                        className="px-2 py-0.5 text-xs font-bold text-[#78350F] hover:bg-[#FEF3C7]"
-                      >
-                        -
-                      </button>
-                      <span className="px-2 text-xs font-bold text-[#451A03]">{item.quantity}</span>
-                      <button
-                        onClick={() => onUpdateQuantity(item.cartItemId, item.quantity + 1)}
-                        className="px-2 py-0.5 text-xs font-bold text-[#78350F] hover:bg-[#FEF3C7]"
-                      >
-                        +
-                      </button>
+                      <div className="text-right">
+                        {(item.discountSaved || 0) > 0 && (
+                          <span className="text-[10px] text-stone-400 line-through mr-1">
+                            ₹{item.unitPrice * item.quantity}
+                          </span>
+                        )}
+                        <span className="font-serif font-bold text-sm text-[#78350F]">
+                          ₹{item.totalPrice}
+                        </span>
+                      </div>
                     </div>
-
-                    <span className="font-serif font-bold text-sm text-[#78350F]">
-                      ₹{item.totalPrice}
-                    </span>
                   </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
 
@@ -168,6 +203,12 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                 <span>Items Subtotal:</span>
                 <span className="font-bold text-[#451A03]">₹{subtotal}</span>
               </div>
+              {totalOfferSavings > 0 && (
+                <div className="flex justify-between text-emerald-700 font-bold">
+                  <span>Special Offer Savings:</span>
+                  <span>-₹{totalOfferSavings} (Included)</span>
+                </div>
+              )}
               <div className="flex justify-between text-[#92400E]">
                 <span>Delivery Charge:</span>
                 <span className="font-bold text-[#451A03]">
@@ -186,7 +227,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
             </div>
 
             <p className="text-[10px] text-[#78350F] bg-[#FEF3C7] p-2.5 rounded-xl border border-[#FDE68A] text-center font-medium">
-              ℹ️ No online payment required right now. Pay when confirmed by owner!
+              🏷️ Have a Coupon Code? Apply it on the next Checkout step!
             </p>
 
             <button

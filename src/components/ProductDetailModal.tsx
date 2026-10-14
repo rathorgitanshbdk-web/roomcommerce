@@ -1,18 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { Product, Review, WeightPriceOption } from '../types';
-import { X, Star, Check, ShoppingCart, User } from 'lucide-react';
-import { fetchReviews, submitReview, FALLBACK_IMAGES, resolveProductImage } from '../services/api';
+import { Product, Review } from '../types';
+import { X, Star, Check, ShoppingCart, User, PackageCheck, Zap } from 'lucide-react';
+import {
+  fetchReviews,
+  submitReview,
+  FALLBACK_IMAGES,
+  resolveProductImage,
+  calculateProductOfferPricing,
+} from '../services/api';
 import { useLanguage } from '../context/LanguageContext';
 
 interface ProductDetailModalProps {
   product: Product | null;
   onClose: () => void;
-  onAddToCart: (
-    product: Product,
-    option: WeightPriceOption,
-    flavor: string | undefined,
-    quantity: number
-  ) => void;
+  onAddToCart: (product: Product, flavor: string | undefined, quantity: number) => void;
 }
 
 export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
@@ -33,9 +34,6 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   const [reviewSuccess, setReviewSuccess] = useState<boolean>(false);
 
   // Selection state
-  const [selectedOption, setSelectedOption] = useState<WeightPriceOption>(
-    product?.options?.[0] || { id: 'default', label: 'Standard', price: 100 }
-  );
   const [selectedFlavor, setSelectedFlavor] = useState<string | undefined>(
     product?.flavors && product.flavors.length > 0 ? product.flavors[0] : undefined
   );
@@ -44,7 +42,6 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 
   useEffect(() => {
     if (product) {
-      setSelectedOption(product.options?.[0] || { id: 'default', label: 'Standard', price: 100 });
       setSelectedFlavor(
         product.flavors && product.flavors.length > 0 ? product.flavors[0] : undefined
       );
@@ -59,6 +56,18 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   }, [product]);
 
   if (!product) return null;
+
+  const maxStock = Math.max(0, Number(product.stockQuantity) || 0);
+  const isAvailable = product.inStock && maxStock > 0;
+  const pricing = calculateProductOfferPricing(product, quantity);
+  const singleUnitPricing = calculateProductOfferPricing(product, 1);
+
+  const offerBadgeText =
+    pricing.hasActiveOffer && product.offer
+      ? product.offer.badgeMode === 'claimed'
+        ? `🔥 Special Offer: ${product.offer.unitsSold}/${product.offer.unitLimit} units claimed`
+        : `🔥 Special Offer: ${pricing.remainingOfferUnits} units left at offer price`
+      : null;
 
   const handleReviewSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -86,7 +95,8 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   };
 
   const handleAdd = () => {
-    onAddToCart(product, selectedOption, selectedFlavor, quantity);
+    if (!isAvailable) return;
+    onAddToCart(product, selectedFlavor, quantity);
     setIsAdded(true);
     setTimeout(() => setIsAdded(false), 1800);
   };
@@ -132,6 +142,11 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 }}
                 className="w-full h-full object-cover"
               />
+              {offerBadgeText && (
+                <span className="absolute top-3 left-3 bg-gradient-to-r from-red-600 to-amber-600 text-white text-[11px] font-bold px-3 py-1 rounded-full shadow-md">
+                  {offerBadgeText}
+                </span>
+              )}
               <span className="absolute bottom-2 left-2 bg-[#451A03]/90 text-[#FEF3C7] text-[10px] px-2 py-0.5 rounded backdrop-blur-sm">
                 100% Homemade Recipe
               </span>
@@ -140,9 +155,22 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
             {/* Product Info & Direct Buy */}
             <div className="space-y-3">
               <div>
-                <span className="text-[10px] font-bold text-[#78350F] uppercase tracking-wider bg-[#FEF3C7] px-2 py-0.5 rounded border border-[#FDE68A]">
-                  {product.category}
-                </span>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-bold text-[#78350F] uppercase tracking-wider bg-[#FEF3C7] px-2 py-0.5 rounded border border-[#FDE68A]">
+                    {product.category}
+                  </span>
+                  {isAvailable ? (
+                    <span className="text-[11px] font-bold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
+                      <PackageCheck className="w-3.5 h-3.5" />
+                      {maxStock} units in stock
+                    </span>
+                  ) : (
+                    <span className="text-[11px] font-bold text-red-800 bg-red-100 px-2.5 py-0.5 rounded-full border border-red-200">
+                      Out of Stock
+                    </span>
+                  )}
+                </div>
+
                 <h3 className="font-serif font-bold text-xl text-[#451A03] mt-1">
                   {product.name}
                 </h3>
@@ -171,6 +199,36 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 <span className="text-[#78350F]">({product.reviewCount} customer ratings)</span>
               </div>
 
+              {/* Price Display Box */}
+              <div className="p-3 rounded-xl bg-[#FEF3C7]/70 border border-[#FDE68A] flex items-center justify-between">
+                <div>
+                  <span className="text-[11px] font-bold text-[#78350F] block">Price per Unit:</span>
+                  {singleUnitPricing.hasActiveOffer && product.offer && (
+                    <span className="text-[10px] font-bold text-emerald-800">
+                      {product.offer.discountType === 'percentage'
+                        ? `${product.offer.discountValue}% Special Discount`
+                        : `Flat ₹${product.offer.discountValue} OFF per unit`}
+                    </span>
+                  )}
+                </div>
+                <div className="text-right">
+                  {singleUnitPricing.hasActiveOffer ? (
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-stone-400 line-through">
+                        ₹{singleUnitPricing.regularUnitPrice}
+                      </span>
+                      <span className="font-serif font-bold text-2xl text-emerald-700">
+                        ₹{singleUnitPricing.offerUnitPrice}
+                      </span>
+                    </div>
+                  ) : (
+                    <span className="font-serif font-bold text-2xl text-[#451A03]">
+                      ₹{singleUnitPricing.regularUnitPrice}
+                    </span>
+                  )}
+                </div>
+              </div>
+
               <p className="text-xs text-[#78350F] leading-relaxed">{product.description}</p>
 
               {product.ingredients && (
@@ -182,35 +240,50 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 </div>
               )}
 
-              {/* Weight Selector */}
-              <div className="pt-2">
-                <label className="block text-xs font-bold text-[#451A03] mb-1">
-                  {t.chooseWeight}
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {product.options.map((opt) => (
-                    <button
-                      key={opt.id}
-                      onClick={() => setSelectedOption(opt)}
-                      className={`p-2 text-xs rounded-xl border text-center transition-all ${
-                        selectedOption.id === opt.id
-                          ? 'bg-[#78350F] text-white font-bold border-[#92400E]'
-                          : 'bg-[#FEFBF2] text-[#451A03] border-[#EED4A8] hover:bg-[#FEF3C7]'
-                      }`}
-                    >
-                      <div>{opt.label}</div>
-                      <div className="text-[10px] text-[#D97706] font-bold">₹{opt.price}</div>
-                    </button>
-                  ))}
+              {/* Flavor Selector if applicable */}
+              {product.flavors && product.flavors.length > 0 && (
+                <div>
+                  <label className="block text-xs font-bold text-[#451A03] mb-1">
+                    {t.flavorLabel}
+                  </label>
+                  <select
+                    value={selectedFlavor}
+                    onChange={(e) => setSelectedFlavor(e.target.value)}
+                    className="w-full text-xs bg-[#FEFBF2] border border-[#EED4A8] rounded-xl p-2 text-[#451A03] font-semibold focus:ring-2 focus:ring-amber-200 focus:outline-none"
+                  >
+                    {product.flavors.map((flv) => (
+                      <option key={flv} value={flv}>
+                        {flv}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-              </div>
+              )}
+
+              {/* Partial Offer Split Explanation */}
+              {pricing.isPartialOfferSplit && (
+                <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-300 text-xs text-amber-950 space-y-1">
+                  <div className="font-bold flex items-center gap-1 text-amber-800">
+                    <Zap className="w-3.5 h-3.5 text-amber-600" />
+                    Only {pricing.remainingOfferUnits} offer unit(s) remaining!
+                  </div>
+                  <p className="text-[11px]">
+                    <strong>{pricing.offerUnitsApplied} unit(s)</strong> at Offer Price (₹
+                    {pricing.offerUnitPrice}) +{' '}
+                    <strong>{pricing.regularUnitsApplied} unit(s)</strong> at Regular Price (₹
+                    {pricing.regularUnitPrice}) = <strong>₹{pricing.totalPrice}</strong>
+                  </p>
+                </div>
+              )}
 
               {/* Add to Cart */}
               <div className="flex items-center gap-3 pt-2">
                 <div className="flex items-center border border-[#EED4A8] rounded-xl p-1 bg-[#FEFBF2]">
                   <button
+                    type="button"
                     onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-                    className="w-7 h-7 bg-white rounded-lg font-bold text-[#451A03] hover:bg-[#FEF3C7] text-sm"
+                    disabled={!isAvailable || quantity <= 1}
+                    className="w-7 h-7 bg-white rounded-lg font-bold text-[#451A03] hover:bg-[#FEF3C7] disabled:opacity-40 text-sm"
                   >
                     -
                   </button>
@@ -218,8 +291,10 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                     {quantity}
                   </span>
                   <button
-                    onClick={() => setQuantity((q) => q + 1)}
-                    className="w-7 h-7 bg-white rounded-lg font-bold text-[#451A03] hover:bg-[#FEF3C7] text-sm"
+                    type="button"
+                    onClick={() => setQuantity((q) => Math.min(maxStock, q + 1))}
+                    disabled={!isAvailable || quantity >= maxStock}
+                    className="w-7 h-7 bg-white rounded-lg font-bold text-[#451A03] hover:bg-[#FEF3C7] disabled:opacity-40 text-sm"
                   >
                     +
                   </button>
@@ -227,18 +302,26 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 
                 <button
                   onClick={handleAdd}
+                  disabled={!isAvailable}
                   className={`flex-1 py-3 rounded-xl font-bold text-xs sm:text-sm text-white flex items-center justify-center gap-2 transition-all ${
-                    isAdded ? 'bg-emerald-600' : 'bg-[#B45309] hover:bg-[#92400E]'
+                    isAdded
+                      ? 'bg-emerald-600'
+                      : isAvailable
+                      ? 'bg-[#B45309] hover:bg-[#92400E]'
+                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                   }`}
                 >
                   {isAdded ? <Check className="w-4 h-4" /> : <ShoppingCart className="w-4 h-4" />}
-                  {isAdded ? t.addedToCart : `${t.addToCart} • ₹${selectedOption.price * quantity}`}
+                  {isAdded
+                    ? t.addedToCart
+                    : isAvailable
+                    ? `${t.addToCart} • ₹${pricing.totalPrice}`
+                    : 'Out of Stock'}
                 </button>
               </div>
             </div>
           </div>
 
-          {/* Section Divider */}
           <hr className="border-[#EED4A8]" />
 
           {/* Write a Review Section */}

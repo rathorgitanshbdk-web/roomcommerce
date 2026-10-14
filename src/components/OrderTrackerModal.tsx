@@ -124,7 +124,6 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({ isOpen, on
                             {t.orderId}: #{ord.id}
                           </div>
 
-                          {/* Status Badge */}
                           {isDispatched ? (
                             <span className="px-2.5 py-1 text-[11px] font-bold bg-blue-100 text-blue-800 border border-blue-300 rounded-full flex items-center gap-1">
                               <Truck className="w-3.5 h-3.5 text-blue-600" />
@@ -173,13 +172,20 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({ isOpen, on
                               className="flex justify-between text-[11px] text-[#78350F]"
                             >
                               <span>
-                                {it.quantity}x {it.productName} ({it.optionLabel})
-                                {it.flavor ? ` - ${it.flavor}` : ''}
+                                {it.quantity}x {it.productName}
+                                {it.flavor ? ` (${it.flavor})` : ''}
                               </span>
                               <span className="font-bold">₹{it.totalPrice}</span>
                             </div>
                           ))}
                         </div>
+
+                        {ord.couponCode && (ord.couponDiscount || 0) > 0 && (
+                          <div className="flex justify-between text-[11px] font-bold text-emerald-700">
+                            <span>Coupon Applied ({ord.couponCode}):</span>
+                            <span>-₹{ord.couponDiscount}</span>
+                          </div>
+                        )}
 
                         <div className="flex justify-between font-serif font-bold text-xs text-[#451A03] pt-1">
                           <span>{t.totalPayable}:</span>
