@@ -482,7 +482,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
               <input
                 type="text"
                 required
-                placeholder="Enter username (admin)"
+                placeholder="Enter username"
                 value={usernameInput}
                 onChange={(e) => setUsernameInput(e.target.value)}
                 className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs focus:ring-2 focus:ring-cyan-500 focus:outline-none font-medium"
@@ -494,7 +494,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToShop }) 
               <input
                 type="password"
                 required
-                placeholder="Enter password (admin)"
+                placeholder="Enter password"
                 value={passwordInput}
                 onChange={(e) => setPasswordInput(e.target.value)}
                 className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs focus:ring-2 focus:ring-cyan-500 focus:outline-none font-medium"
